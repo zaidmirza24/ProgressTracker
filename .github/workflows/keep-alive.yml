@@ -1,0 +1,17 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    # Runs every 5 minutes — keeps Render free tier from spinning down
+    - cron: '*/5 * * * *'
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          curl --fail --silent --show-error \
+            https://progress-tracker-api-3f4s.onrender.com/api/health
+        # Replace YOUR_APP_NAME with your actual Render service name
+        # Example: https://progresstracker-api.onrender.com/health
