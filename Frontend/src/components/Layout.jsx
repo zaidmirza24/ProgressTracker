@@ -1,20 +1,21 @@
+import { useState } from "react"
 import { Link, Outlet, useLocation } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useTimer } from "../context/TimerContext"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { motion } from "motion/react"
+import { motion, AnimatePresence } from "motion/react"
 import {
   Building2, Users, ClipboardList, Timer, FileText,
   LayoutDashboard, LogOut, ChevronRight, BarChart3, UserPlus,
-  Play, Pause, Square
+  Play, Pause, Square, Menu, X, ArrowUpRight
 } from "lucide-react"
 
 const ROLE_CONFIG = {
   super_admin: {
-    label: "SUPER ADMIN",
-    variant: "default",
+    label: "Super Admin",
+    variant: "violet",
     links: [
       { to: "/super-admin", icon: LayoutDashboard, label: "Admin Panel" },
     ],
@@ -25,8 +26,8 @@ const ROLE_CONFIG = {
     ]
   },
   manager: {
-    label: "MANAGER",
-    variant: "secondary",
+    label: "Manager",
+    variant: "info",
     links: [
       { to: "/manager", icon: LayoutDashboard, label: "Dashboard" },
     ],
@@ -36,8 +37,8 @@ const ROLE_CONFIG = {
     ]
   },
   employee: {
-    label: "EMPLOYEE",
-    variant: "outline",
+    label: "Employee",
+    variant: "secondary",
     links: [
       { to: "/employee", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/work-logs", icon: FileText, label: "Work Log" },
@@ -52,6 +53,7 @@ const Layout = () => {
   const { user, logout } = useAuth()
   const location = useLocation()
   const { activeSession, elapsedSeconds, isRunning, pauseTimer, resumeTimer, stopTimer } = useTimer()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const formatTime = (totalSecs) => {
     const hrs = Math.floor(totalSecs / 3600)
@@ -68,129 +70,221 @@ const Layout = () => {
   if (!user) return null
 
   const config = ROLE_CONFIG[user.role] || ROLE_CONFIG.employee
+  const userInitials = user.name ? user.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "US"
 
-  return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <motion.aside
-        initial={{ x: -20, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.3, ease: "easeOut" }}
-        className="w-64 border-r border-border bg-card flex flex-col"
-      >
-        {/* Logo */}
-        <div className="p-5">
-          <h3 className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-            ProgressTracker
-          </h3>
-          <Badge variant={config.variant} className="mt-2 text-[10px] tracking-wider">
-            {config.label}
-          </Badge>
+  const sidebarContent = (
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
+      {/* Brand Logo */}
+      <div className="p-6 flex items-center justify-between border-b border-sidebar-border/40">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary to-violet-500 flex items-center justify-center glow-primary">
+            <BarChart3 className="h-5 w-5 text-white" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-base font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+              ProgressTracker
+            </span>
+            <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
+              v1.0.0
+            </span>
+          </div>
         </div>
+        <Badge variant={config.variant} className="text-[10px] px-2 py-0.5 rounded-md font-medium tracking-wide">
+          {config.label}
+        </Badge>
+      </div>
 
-        {/* User Info */}
-        <div className="px-5 pb-4">
-          <p className="text-sm font-semibold">{user.name}</p>
-          <p className="text-xs text-muted-foreground break-all">{user.email}</p>
+      {/* User Card */}
+      <div className="px-6 py-4 flex items-center gap-3 border-b border-sidebar-border/30 bg-muted/10">
+        <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-primary text-sm">
+          {userInitials}
         </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold truncate text-foreground">{user.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+        </div>
+      </div>
 
-        <Separator />
-
-        {/* Nav Links */}
-        <nav className="flex-1 p-3 space-y-1">
+      {/* Navigation */}
+      <div className="flex-grow p-4 space-y-6 overflow-y-auto">
+        <div className="space-y-1">
+          <p className="text-[10px] font-bold text-muted-foreground tracking-widest px-3 mb-2 uppercase">NAVIGATION</p>
           {config.links.map((link) => {
             const Icon = link.icon
             const isActive = location.pathname === link.to
             return (
-              <Link key={link.to} to={link.to}>
+              <Link key={link.to} to={link.to} onClick={() => setMobileOpen(false)}>
                 <Button
                   variant={isActive ? "secondary" : "ghost"}
-                  className="w-full justify-start gap-2 text-sm"
+                  className={`w-full justify-start gap-3 text-sm h-10 transition-all rounded-lg relative ${
+                    isActive 
+                      ? "bg-primary/10 text-primary hover:bg-primary/15 font-semibold accent-bar" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={`h-4.5 w-4.5 ${isActive ? "text-primary" : ""}`} />
                   {link.label}
-                  {isActive && <ChevronRight className="h-3 w-3 ml-auto" />}
+                  {isActive && <ChevronRight className="h-3.5 w-3.5 ml-auto text-primary" />}
                 </Button>
               </Link>
             )
           })}
+        </div>
 
-          {/* Placeholder future links */}
+        {/* Placeholders */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between px-3 mb-2">
+            <p className="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">FUTURE MODULES</p>
+            <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono font-bold">MVP</span>
+          </div>
           {config.placeholders.map((item) => {
             const Icon = item.icon
             return (
               <Button
                 key={item.label}
                 variant="ghost"
-                className="w-full justify-start gap-2 text-sm text-muted-foreground opacity-50 cursor-not-allowed"
+                className="w-full justify-start gap-3 text-sm h-10 text-muted-foreground/40 hover:bg-transparent cursor-not-allowed"
                 disabled
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4.5 w-4.5" />
                 {item.label}
-                <span className="ml-auto text-[10px] uppercase tracking-wide">MVP</span>
+                <ArrowUpRight className="h-3 w-3 ml-auto opacity-30" />
               </Button>
             )
           })}
-        </nav>
+        </div>
+      </div>
 
-        {/* Floating Active Timer Widget */}
-        {user.role === "employee" && activeSession && (
-          <div className="p-4 mx-3 my-2 rounded-xl bg-muted/30 border border-border/40 space-y-3">
-            <div className="space-y-1">
-              <span className="text-[10px] text-yellow-500 font-semibold tracking-wider flex items-center gap-1">
-                <Timer className="h-3 w-3 animate-pulse" /> ACTIVE TRACKER
-              </span>
-              <p className="text-xs font-semibold truncate text-foreground/90">{activeSession.task?.title}</p>
-            </div>
+      {/* Live Timer Widget */}
+      {user.role === "employee" && activeSession && (
+        <div className="p-4 m-4 rounded-xl bg-gradient-to-b from-card to-card/50 border border-border/80 shadow-lg space-y-3 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 h-24 w-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-all duration-300"></div>
+          
+          <div className="space-y-1 relative">
+            <span className="text-[10px] text-primary font-bold tracking-widest flex items-center gap-1.5">
+              <span className="pulse-dot"></span>
+              ACTIVE TRACKER
+            </span>
+            <p className="text-xs font-semibold truncate text-foreground/90">{activeSession.task?.title}</p>
+          </div>
+          
+          <div className="flex items-center justify-between relative">
+            <span className="font-mono text-2xl font-bold tracking-tight text-foreground/95">
+              {formatTime(elapsedSeconds)}
+            </span>
             
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-xl font-bold tracking-tight text-foreground/90">
-                {formatTime(elapsedSeconds)}
-              </span>
-              
-              <div className="flex items-center gap-1.5">
-                {isRunning ? (
-                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={pauseTimer}>
-                    <Pause className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={resumeTimer}>
-                    <Play className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                <Button variant="destructive" size="icon" className="h-7 w-7" onClick={stopTimer}>
-                  <Square className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-1.5">
+              {isRunning ? (
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8 rounded-lg bg-background/50 hover:bg-accent/80 transition-colors" 
+                  onClick={pauseTimer}
+                >
+                  <Pause className="h-3.5 w-3.5 text-foreground" />
                 </Button>
-              </div>
+              ) : (
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8 rounded-lg bg-background/50 hover:bg-accent/80 transition-colors" 
+                  onClick={resumeTimer}
+                >
+                  <Play className="h-3.5 w-3.5 text-primary" />
+                </Button>
+              )
+              }
+              <Button 
+                variant="destructive" 
+                size="icon" 
+                className="h-8 w-8 rounded-lg bg-destructive/10 border border-destructive/20 hover:bg-destructive/20 transition-colors" 
+                onClick={stopTimer}
+              >
+                <Square className="h-3.5 w-3.5 text-red-400" />
+              </Button>
             </div>
           </div>
-        )}
-
-        <Separator />
-
-        {/* Logout */}
-        <div className="p-3">
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-2 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={logout}
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
         </div>
-      </motion.aside>
+      )}
 
-      {/* Main Content */}
-      <motion.main
-        key={location.pathname}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="flex-1 p-8 overflow-auto"
-      >
-        <Outlet />
-      </motion.main>
+      {/* Logout Footer */}
+      <div className="p-4 border-t border-sidebar-border/40 bg-sidebar/50">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-3 text-sm h-10 text-destructive/80 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+          onClick={logout}
+        >
+          <LogOut className="h-4.5 w-4.5" />
+          Logout
+        </Button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:block w-64 border-r border-border bg-sidebar flex-shrink-0">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Top Bar */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 border-b border-border bg-sidebar px-4 flex items-center justify-between z-40">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-primary to-violet-500 flex items-center justify-center">
+            <BarChart3 className="h-4 w-4 text-white" />
+          </div>
+          <span className="text-sm font-bold tracking-tight">ProgressTracker</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 text-foreground"
+          onClick={() => setMobileOpen(!mobileOpen)}
+        >
+          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+      </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              className="lg:hidden fixed inset-0 bg-black z-40"
+              onClick={() => setMobileOpen(false)}
+            />
+            {/* Drawer */}
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="lg:hidden fixed top-0 bottom-0 left-0 w-64 bg-sidebar border-r border-border z-50 shadow-2xl"
+            >
+              {sidebarContent}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 pt-16 lg:pt-0">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto max-w-7xl w-full mx-auto">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+          >
+            <Outlet />
+          </motion.div>
+        </main>
+      </div>
     </div>
   )
 }

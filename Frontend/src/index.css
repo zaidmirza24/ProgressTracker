@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -41,48 +42,205 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Color Tokens ─────────────────────────────────────────── */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10.2%);
-  --input: oklch(1 0 0 / 14.9%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10.2%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --radius: 0.75rem;
+
+  /* Backgrounds */
+  --background:        oklch(0.095 0.018 268);
+  --foreground:        oklch(0.965 0.006 252);
+
+  /* Cards & Popovers */
+  --card:              oklch(0.140 0.022 268);
+  --card-foreground:   oklch(0.965 0.006 252);
+  --popover:           oklch(0.140 0.022 268);
+  --popover-foreground: oklch(0.965 0.006 252);
+
+  /* Primary — Indigo/Violet */
+  --primary:           oklch(0.630 0.215 272);
+  --primary-foreground: oklch(0.99 0.002 265);
+
+  /* Secondary */
+  --secondary:         oklch(0.210 0.026 268);
+  --secondary-foreground: oklch(0.965 0.006 252);
+
+  /* Muted */
+  --muted:             oklch(0.195 0.022 268);
+  --muted-foreground:  oklch(0.575 0.032 262);
+
+  /* Accent */
+  --accent:            oklch(0.210 0.026 268);
+  --accent-foreground: oklch(0.965 0.006 252);
+
+  /* Destructive */
+  --destructive:       oklch(0.625 0.215 22);
+  --destructive-foreground: oklch(0.99 0.002 265);
+
+  /* Borders & Inputs */
+  --border:            oklch(1 0 0 / 9%);
+  --input:             oklch(1 0 0 / 11%);
+  --ring:              oklch(0.630 0.215 272 / 50%);
+
+  /* Charts */
+  --chart-1:           oklch(0.580 0.215 272);
+  --chart-2:           oklch(0.680 0.160 165);
+  --chart-3:           oklch(0.750 0.175 72);
+  --chart-4:           oklch(0.620 0.250 308);
+  --chart-5:           oklch(0.640 0.235 18);
+
+  /* Sidebar (slightly darker than card) */
+  --sidebar:           oklch(0.115 0.020 268);
+  --sidebar-foreground: oklch(0.965 0.006 252);
+  --sidebar-primary:   oklch(0.630 0.215 272);
+  --sidebar-primary-foreground: oklch(0.99 0.002 265);
+  --sidebar-accent:    oklch(0.195 0.022 268);
+  --sidebar-accent-foreground: oklch(0.965 0.006 252);
+  --sidebar-border:    oklch(1 0 0 / 7%);
+  --sidebar-ring:      oklch(0.630 0.215 272 / 50%);
+
+  /* Semantic colors (used in badge variants) */
+  --success:           oklch(0.645 0.175 158);
+  --success-foreground: oklch(0.99 0.005 158);
+  --warning:           oklch(0.720 0.180 72);
+  --warning-foreground: oklch(0.18 0.040 72);
+  --info:              oklch(0.630 0.190 230);
+  --info-foreground:   oklch(0.99 0.002 230);
 }
 
+/* ── Base Styles ──────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
+    font-weight: 700;
+  }
+
+  /* Monospace for numbers/timers */
+  .font-mono, code, pre {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+}
+
+/* ── Semantic Badge Variants ──────────────────────────────── */
+@layer utilities {
+  .badge-success {
+    background-color: oklch(0.645 0.175 158 / 20%);
+    color: oklch(0.745 0.165 158);
+    border-color: oklch(0.645 0.175 158 / 30%);
+  }
+  .badge-warning {
+    background-color: oklch(0.720 0.180 72 / 18%);
+    color: oklch(0.820 0.160 72);
+    border-color: oklch(0.720 0.180 72 / 30%);
+  }
+  .badge-info {
+    background-color: oklch(0.630 0.190 230 / 18%);
+    color: oklch(0.730 0.160 230);
+    border-color: oklch(0.630 0.190 230 / 30%);
+  }
+  .badge-violet {
+    background-color: oklch(0.630 0.215 272 / 18%);
+    color: oklch(0.730 0.185 272);
+    border-color: oklch(0.630 0.215 272 / 30%);
+  }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px oklch(0 0 0 / 40%), 0 0 0 1px oklch(0.630 0.215 272 / 15%);
+    border-color: oklch(0.630 0.215 272 / 25%);
+  }
+
+  /* Subtle glow on primary elements */
+  .glow-primary {
+    box-shadow: 0 0 20px oklch(0.630 0.215 272 / 25%);
+  }
+
+  /* Accent left border */
+  .accent-bar {
+    position: relative;
+  }
+  .accent-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 15%;
+    height: 70%;
+    width: 2.5px;
+    background: var(--primary);
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(90deg,
+      oklch(0.195 0.022 268) 25%,
+      oklch(0.230 0.025 268) 50%,
+      oklch(0.195 0.022 268) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease infinite;
+    border-radius: var(--radius-sm);
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Pulse dot */
+  .pulse-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: oklch(0.645 0.175 158);
+    box-shadow: 0 0 0 0 oklch(0.645 0.175 158 / 50%);
+    animation: pulse-ring 1.8s ease infinite;
+  }
+
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 oklch(0.645 0.175 158 / 50%); }
+    70%  { box-shadow: 0 0 0 7px oklch(0.645 0.175 158 / 0%); }
+    100% { box-shadow: 0 0 0 0 oklch(0.645 0.175 158 / 0%); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 12%);
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(1 0 0 / 20%);
   }
 }
