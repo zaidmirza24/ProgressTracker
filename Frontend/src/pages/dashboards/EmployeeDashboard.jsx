@@ -153,7 +153,7 @@ const EmployeeDashboard = () => {
         case "Not Started": return ["Accepted"]
         case "Accepted": return ["In Progress"]
         case "In Progress": return ["Completed"]
-        case "Approved": return ["In Progress"] // Allow reopening self task
+        case "Completed": return ["In Progress"] // Allow reopening completed self task
         default: return []
       }
     } else {
@@ -176,7 +176,7 @@ const EmployeeDashboard = () => {
         { label: "Not Started", key: "Not Started" },
         { label: "Accepted", key: "Accepted" },
         { label: "In Progress", key: "In Progress" },
-        { label: "Completed", key: "Approved" } // Handled as Approved internally
+        { label: "Completed", key: "Completed" }
       ]
     } else {
       return [
@@ -377,7 +377,7 @@ const EmployeeDashboard = () => {
                             </select>
                           ) : (
                             <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
-                              {t.status === "Approved" && isSelfCreated ? "Completed" : t.status}
+                              {t.status}
                             </Badge>
                           )}
                         </TableCell>
@@ -546,7 +546,7 @@ const EmployeeDashboard = () => {
               <div className="flex items-center justify-between pr-6 gap-4">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{detailTask.title}</DialogTitle>
                 <Badge variant={STATUS_VARIANTS[detailTask.status] || "default"} className="font-bold shrink-0">
-                  {(detailTask.assignedBy?._id === detailTask.assignedTo?._id || detailTask.assignedBy === detailTask.assignedTo) && detailTask.status === "Approved" ? "Completed" : detailTask.status}
+                  {detailTask.status}
                 </Badge>
               </div>
               <DialogDescription className="text-xs uppercase tracking-wider font-semibold text-primary">{detailTask.category}</DialogDescription>
@@ -572,7 +572,7 @@ const EmployeeDashboard = () => {
                           <button
                             type="button"
                             disabled={!isClickable || submitting}
-                            onClick={() => handleStatusTransition(step.key === "Approved" && isSelfCreated ? "Completed" : step.key)}
+                            onClick={() => handleStatusTransition(step.key)}
                             className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                               isCompleted 
                                 ? "bg-green-500 text-white shadow-sm border border-green-600" 

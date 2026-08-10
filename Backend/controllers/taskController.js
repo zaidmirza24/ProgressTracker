@@ -86,9 +86,9 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   }
 
   let finalStatus = status
-  // If the task is self-assigned, and it is transitioned to Waiting for Review or Completed, direct complete to Approved
-  if (task.assignedBy.toString() === task.assignedTo.toString() && ["Waiting for Review", "Completed"].includes(status)) {
-    finalStatus = "Approved"
+  // If the task is self-assigned, and it is transitioned to Waiting for Review, direct complete to Completed
+  if (task.assignedBy.toString() === task.assignedTo.toString() && status === "Waiting for Review") {
+    finalStatus = "Completed"
   }
 
   // Update status and default progress

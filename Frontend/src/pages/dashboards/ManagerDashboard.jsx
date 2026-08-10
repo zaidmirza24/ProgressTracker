@@ -143,6 +143,7 @@ const ManagerDashboard = () => {
       case "Rejected": return ["In Progress"]
       case "Reopened": return ["In Progress"]
       case "Approved": return ["Reopened"] // Allow manager to reopen approved task
+      case "Completed": return ["In Progress"] // Allow reopening self-assigned completed task
       default: return []
     }
   }
@@ -155,7 +156,7 @@ const ManagerDashboard = () => {
         { label: "Not Started", key: "Not Started" },
         { label: "Accepted", key: "Accepted" },
         { label: "In Progress", key: "In Progress" },
-        { label: "Completed", key: "Approved" }
+        { label: "Completed", key: "Completed" }
       ]
     } else {
       return [
