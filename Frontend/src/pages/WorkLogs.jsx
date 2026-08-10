@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
+import API_BASE from "../../lib/api"
 import { useAuth } from "../context/AuthContext"
 import { motion } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -42,7 +43,7 @@ const WorkLogs = () => {
   const loadLogs = async (empFilter = "") => {
     try {
       const params = empFilter ? `?employee=${empFilter}` : ""
-      const res = await axios.get(`http://localhost:3000/api/daily-work-logs${params}`)
+      const res = await axios.get(`${API_BASE}/api/daily-work-logs${params}`)
       setLogs(res.data.logs)
     } catch (err) {
       console.error("Error loading logs:", err)
@@ -54,7 +55,7 @@ const WorkLogs = () => {
   const loadEmployees = async () => {
     if (!isManager) return
     try {
-      const res = await axios.get("http://localhost:3000/api/users")
+      const res = await axios.get("${API_BASE}/api/users")
       const subordinates = res.data.users.filter(u => u.role === "employee")
       setEmployees(subordinates)
     } catch (err) {
@@ -79,7 +80,7 @@ const WorkLogs = () => {
     // Pre-fill hours from today's sessions
     setPrefilling(true)
     try {
-      const res = await axios.get("http://localhost:3000/api/work-sessions/today-hours")
+      const res = await axios.get("${API_BASE}/api/work-sessions/today-hours")
       setForm(f => ({ ...f, hoursWorked: res.data.hoursWorked }))
     } catch {
       // Leave blank if fetch fails
@@ -92,7 +93,7 @@ const WorkLogs = () => {
     e.preventDefault()
     setSubmitting(true)
     try {
-      await axios.post("http://localhost:3000/api/daily-work-logs", form)
+      await axios.post("${API_BASE}/api/daily-work-logs", form)
       await loadLogs()
       setCreateOpen(false)
       setForm(BLANK_FORM)

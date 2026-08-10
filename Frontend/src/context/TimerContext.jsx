@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react"
 import axios from "axios"
 import { useAuth } from "./AuthContext"
+import API_BASE from "../lib/api"
 
 const TimerContext = createContext(null)
 
@@ -19,7 +20,7 @@ export const TimerProvider = ({ children }) => {
       return
     }
     try {
-      const res = await axios.get("http://localhost:3000/api/work-sessions/active")
+      const res = await axios.get(`${API_BASE}/api/work-sessions/active`)
       const { session, elapsedSeconds: serverSeconds, isRunning: serverRunning } = res.data
       setActiveSession(session)
       setElapsedSeconds(serverSeconds)
@@ -54,7 +55,7 @@ export const TimerProvider = ({ children }) => {
 
   const startTimer = async (taskId) => {
     try {
-      const res = await axios.post("http://localhost:3000/api/work-sessions/start", { taskId })
+      const res = await axios.post(`${API_BASE}/api/work-sessions/start`, { taskId })
       const { session, elapsedSeconds: serverSeconds, isRunning: serverRunning } = res.data
       setActiveSession(session)
       setElapsedSeconds(serverSeconds)
@@ -68,7 +69,7 @@ export const TimerProvider = ({ children }) => {
 
   const pauseTimer = async () => {
     try {
-      const res = await axios.post("http://localhost:3000/api/work-sessions/pause")
+      const res = await axios.post(`${API_BASE}/api/work-sessions/pause`)
       const { session, elapsedSeconds: serverSeconds, isRunning: serverRunning } = res.data
       setActiveSession(session)
       setElapsedSeconds(serverSeconds)
@@ -80,7 +81,7 @@ export const TimerProvider = ({ children }) => {
 
   const resumeTimer = async () => {
     try {
-      const res = await axios.post("http://localhost:3000/api/work-sessions/resume")
+      const res = await axios.post(`${API_BASE}/api/work-sessions/resume`)
       const { session, elapsedSeconds: serverSeconds, isRunning: serverRunning } = res.data
       setActiveSession(session)
       setElapsedSeconds(serverSeconds)
@@ -92,7 +93,7 @@ export const TimerProvider = ({ children }) => {
 
   const stopTimer = async () => {
     try {
-      await axios.post("http://localhost:3000/api/work-sessions/stop")
+      await axios.post(`${API_BASE}/api/work-sessions/stop`)
       setActiveSession(null)
       setElapsedSeconds(0)
       setIsRunning(false)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
+import API_BASE from "../../lib/api"
 import { useAuth } from "../../context/AuthContext"
 import { useTimer } from "../../context/TimerContext"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -46,7 +47,7 @@ const EmployeeDashboard = () => {
 
   const loadTasks = async () => {
     try {
-      const res = await axios.get("http://localhost:3000/api/tasks")
+      const res = await axios.get("${API_BASE}/api/tasks")
       setTasks(res.data.tasks)
     } catch (err) {
       console.error("Error loading employee tasks:", err)
@@ -71,7 +72,7 @@ const EmployeeDashboard = () => {
     if (!detailTask) return
     setSubmitting(true)
     try {
-      const res = await axios.put(`http://localhost:3000/api/tasks/${detailTask._id}/status`, {
+      const res = await axios.put(`${API_BASE}/api/tasks/${detailTask._id}/status`, {
         status: newStatus,
         comment: transitionComment
       })
@@ -89,7 +90,7 @@ const EmployeeDashboard = () => {
     e.preventDefault()
     if (!newComment.trim() || !detailTask) return
     try {
-      const res = await axios.post(`http://localhost:3000/api/tasks/${detailTask._id}/comments`, {
+      const res = await axios.post(`${API_BASE}/api/tasks/${detailTask._id}/comments`, {
         text: newComment
       })
       setDetailTask(res.data.task)

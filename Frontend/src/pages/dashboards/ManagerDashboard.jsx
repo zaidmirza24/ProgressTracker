@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
+import API_BASE from "../../lib/api"
 import { useAuth } from "../../context/AuthContext"
 import { motion, AnimatePresence } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -56,9 +57,9 @@ const ManagerDashboard = () => {
   const loadData = async () => {
     try {
       const [tRes, uRes, dRes] = await Promise.all([
-        axios.get("http://localhost:3000/api/tasks"),
-        axios.get("http://localhost:3000/api/users"),
-        axios.get("http://localhost:3000/api/departments")
+        axios.get("${API_BASE}/api/tasks"),
+        axios.get("${API_BASE}/api/users"),
+        axios.get("${API_BASE}/api/departments")
       ])
       setTasks(tRes.data.tasks)
       // Filter employees that report to this manager
@@ -66,7 +67,7 @@ const ManagerDashboard = () => {
       setEmployees(subordinates)
       setDepartments(dRes.data.departments)
       // Load today's work logs
-      const logsRes = await axios.get("http://localhost:3000/api/daily-work-logs")
+      const logsRes = await axios.get("${API_BASE}/api/daily-work-logs")
       setWorkLogs(logsRes.data.logs)
     } catch (err) {
       console.error("Error loading dashboard data:", err)
@@ -83,7 +84,7 @@ const ManagerDashboard = () => {
     e.preventDefault()
     setSubmitting(true)
     try {
-      await axios.post("http://localhost:3000/api/tasks", taskForm)
+      await axios.post("${API_BASE}/api/tasks", taskForm)
       await loadData()
       setCreateOpen(false)
       setTaskForm({
@@ -102,7 +103,7 @@ const ManagerDashboard = () => {
     if (!detailTask) return
     setSubmitting(true)
     try {
-      const res = await axios.put(`http://localhost:3000/api/tasks/${detailTask._id}/status`, {
+      const res = await axios.put(`${API_BASE}/api/tasks/${detailTask._id}/status`, {
         status,
         comment: reviewComment
       })
@@ -120,7 +121,7 @@ const ManagerDashboard = () => {
     e.preventDefault()
     if (!newComment.trim() || !detailTask) return
     try {
-      const res = await axios.post(`http://localhost:3000/api/tasks/${detailTask._id}/comments`, {
+      const res = await axios.post(`${API_BASE}/api/tasks/${detailTask._id}/comments`, {
         text: newComment
       })
       setDetailTask(res.data.task)

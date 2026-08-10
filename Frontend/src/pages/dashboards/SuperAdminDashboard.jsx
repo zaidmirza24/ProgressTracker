@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
+import API_BASE from "../../lib/api"
 import { useAuth } from "../../context/AuthContext"
 import { motion, AnimatePresence } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -20,7 +21,7 @@ const DepartmentsTab = () => {
   const [saving, setSaving] = useState(false)
 
   const load = async () => {
-    const res = await axios.get("http://localhost:3000/api/departments")
+    const res = await axios.get("${API_BASE}/api/departments")
     setDepartments(res.data.departments)
   }
 
@@ -41,9 +42,9 @@ const DepartmentsTab = () => {
     setSaving(true)
     try {
       if (modal === "create") {
-        await axios.post("http://localhost:3000/api/departments", form)
+        await axios.post("${API_BASE}/api/departments", form)
       } else {
-        await axios.put(`http://localhost:3000/api/departments/${modal._id}`, form)
+        await axios.put(`${API_BASE}/api/departments/${modal._id}`, form)
       }
       await load()
       setModal(null)
@@ -158,8 +159,8 @@ const TeamsTab = () => {
 
   const load = async () => {
     const [t, d] = await Promise.all([
-      axios.get("http://localhost:3000/api/teams"),
-      axios.get("http://localhost:3000/api/departments")
+      axios.get("${API_BASE}/api/teams"),
+      axios.get("${API_BASE}/api/departments")
     ])
     setTeams(t.data.teams)
     setDepartments(d.data.departments)
@@ -182,9 +183,9 @@ const TeamsTab = () => {
     setSaving(true)
     try {
       if (modal === "create") {
-        await axios.post("http://localhost:3000/api/teams", form)
+        await axios.post("${API_BASE}/api/teams", form)
       } else {
-        await axios.put(`http://localhost:3000/api/teams/${modal._id}`, form)
+        await axios.put(`${API_BASE}/api/teams/${modal._id}`, form)
       }
       await load()
       setModal(null)
@@ -336,9 +337,9 @@ const UsersTab = () => {
 
   const load = async () => {
     const [u, d, t] = await Promise.all([
-      axios.get("http://localhost:3000/api/users"),
-      axios.get("http://localhost:3000/api/departments"),
-      axios.get("http://localhost:3000/api/teams")
+      axios.get("${API_BASE}/api/users"),
+      axios.get("${API_BASE}/api/departments"),
+      axios.get("${API_BASE}/api/teams")
     ])
     setUsers(u.data.users)
     setDepartments(d.data.departments)
@@ -369,9 +370,9 @@ const UsersTab = () => {
       const payload = { ...form }
       if (!payload.password) delete payload.password
       if (modal === "create") {
-        await axios.post("http://localhost:3000/api/users", payload)
+        await axios.post("${API_BASE}/api/users", payload)
       } else {
-        await axios.put(`http://localhost:3000/api/users/${modal._id}`, payload)
+        await axios.put(`${API_BASE}/api/users/${modal._id}`, payload)
       }
       await load()
       setModal(null)

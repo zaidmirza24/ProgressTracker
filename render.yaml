@@ -1,0 +1,31 @@
+services:
+  # ── Backend: Express Web Service ──────────────────────────────────────────
+  - type: web
+    name: progresstracker-api
+    runtime: node
+    rootDir: Backend
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false   # Set this in the Render dashboard
+      - key: JWT_SECRET
+        sync: false   # Set this in the Render dashboard
+      - key: CLIENT_URL
+        sync: false   # Set to your frontend URL e.g. https://progresstracker.onrender.com
+
+  # ── Frontend: Vite Static Site ────────────────────────────────────────────
+  - type: static
+    name: progresstracker
+    rootDir: Frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false   # Set to your backend URL e.g. https://progresstracker-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
