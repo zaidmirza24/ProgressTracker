@@ -42,6 +42,7 @@ const EmployeeDashboard = () => {
   const [loading, setLoading] = useState(true)
   const [detailTask, setDetailTask] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [todayHours, setTodayHours] = useState(0)
   
   // Forms
   const [taskForm, setTaskForm] = useState({
@@ -54,8 +55,12 @@ const EmployeeDashboard = () => {
 
   const loadTasks = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/api/tasks`)
-      setTasks(res.data.tasks)
+      const [tasksRes, hoursRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/tasks`),
+        axios.get(`${API_BASE}/api/work-sessions/today-hours`)
+      ])
+      setTasks(tasksRes.data.tasks)
+      setTodayHours(hoursRes.data.hoursWorked)
     } catch (err) {
       console.error("Error loading employee tasks:", err)
     } finally {
@@ -65,7 +70,7 @@ const EmployeeDashboard = () => {
 
   useEffect(() => {
     loadTasks()
-  }, [])
+  }, [activeSession]) // Reload when timer starts/stops to update todayHours
 
   // Sync details dialog with updated task context if it changes in the list
   useEffect(() => {
@@ -142,6 +147,16 @@ const EmployeeDashboard = () => {
     const pad = (num) => String(num).padStart(2, "0")
     if (hrs > 0) return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`
     return `${pad(mins)}:${pad(secs)}`
+  }
+
+  const formatTrackedTime = (seconds) => {
+    if (!seconds) return "0m"
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    if (hrs > 0) {
+      return `${hrs}h ${mins}m`
+    }
+    return `${mins}m`
   }
 
   // Get available transitions based on task type (self-assigned vs manager-assigned)
@@ -234,7 +249,7 @@ const EmployeeDashboard = () => {
               {activeSession ? formatTime(elapsedSeconds) : "00:00"}
             </div>
             <p className="text-xs text-muted-foreground mt-1 truncate">
-              {activeSession ? `${activeSession.task?.title}` : "No active timer"}
+              {activeSession ? `Active: ${activeSession.task?.title}` : "No active timer"}
             </p>
           </CardContent>
         </Card>
@@ -254,12 +269,12 @@ const EmployeeDashboard = () => {
         <Card className="border-border/50 card-hover relative overflow-hidden group">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-info rounded-l-md"></div>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Work Log Status</CardTitle>
-            <Clock className="h-4.5 w-4.5 text-info" />
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Today's Tracked Time</CardTitle>
+            <Clock className="h-4.5 w-4.5 text-info animate-pulse" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-info-foreground">Unfiled</div>
-            <p className="text-xs text-muted-foreground mt-1">Daily productivity log pending</p>
+            <div className="text-3xl font-bold font-mono tracking-tight text-info-foreground">{todayHours}h</div>
+            <p className="text-xs text-muted-foreground mt-1">Cumulative time recorded today</p>
           </CardContent>
         </Card>
       </div>
@@ -337,7 +352,15 @@ const EmployeeDashboard = () => {
                                 <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
                               )}
                             </span>
-                            <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">{t.category}</span>
+                            <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">
+                              {t.category}
+                              {t.totalTrackedSeconds > 0 && (
+                                <>
+                                  <span className="text-muted-foreground/40">•</span>
+                                  <span className="text-violet-400">{formatTrackedTime(t.totalTrackedSeconds)} tracked</span>
+                                </>
+                              )}
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
@@ -617,6 +640,10 @@ const EmployeeDashboard = () => {
                   <span>Est. Hours: <strong className="text-foreground">{detailTask.estimatedHours} hrs</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4 text-violet-400" />
+                  <span>Time Tracked: <strong className="text-violet-400">{formatTrackedTime(detailTask.totalTrackedSeconds)}</strong></span>
+                </div>
+                <div className="col-span-2 flex items-center gap-2 text-muted-foreground">
                   <BarChart3 className="h-4 w-4 text-primary" />
                   <span>Progress: <strong className="text-foreground">{detailTask.progressPercentage}%</strong></span>
                 </div>

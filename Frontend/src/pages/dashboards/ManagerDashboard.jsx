@@ -133,6 +133,16 @@ const ManagerDashboard = () => {
     }
   }
 
+  const formatTrackedTime = (seconds) => {
+    if (!seconds) return "0m"
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    if (hrs > 0) {
+      return `${hrs}h ${mins}m`
+    }
+    return `${mins}m`
+  }
+
   // Get available transitions for manager inline dropdown
   const getNextStatusesForManager = (task) => {
     switch (task.status) {
@@ -308,7 +318,15 @@ const ManagerDashboard = () => {
                                 <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
                               )}
                             </span>
-                            <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">{t.category}</span>
+                            <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">
+                              {t.category}
+                              {t.totalTrackedSeconds > 0 && (
+                                <>
+                                  <span className="text-muted-foreground/40">•</span>
+                                  <span className="text-violet-400">{formatTrackedTime(t.totalTrackedSeconds)} tracked</span>
+                                </>
+                              )}
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
@@ -577,6 +595,10 @@ const ManagerDashboard = () => {
                   <span>Est. Hours: <strong className="text-foreground">{detailTask.estimatedHours} hrs</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4 text-violet-400" />
+                  <span>Time Tracked: <strong className="text-violet-400">{formatTrackedTime(detailTask.totalTrackedSeconds)}</strong></span>
+                </div>
+                <div className="col-span-2 flex items-center gap-2 text-muted-foreground">
                   <BarChart3 className="h-4 w-4 text-primary" />
                   <span>Progress: <strong className="text-foreground">{detailTask.progressPercentage}%</strong></span>
                 </div>

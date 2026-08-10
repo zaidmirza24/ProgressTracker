@@ -1,7 +1,41 @@
 import Task from "../models/Task.js"
 import User from "../models/User.js"
+import WorkSession from "../models/WorkSession.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
+
+// Helper to calculate elapsed seconds for a single work session
+const calculateSessionSeconds = (session) => {
+  if (!session) return 0
+  const events = session.events
+  if (events.length === 0) {
+    const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000
+    return Math.max(0, Math.floor(elapsed))
+  }
+  const lastEvent = events[events.length - 1]
+  if (lastEvent.type === "pause") {
+    return Math.floor(session.totalSeconds)
+  } else {
+    const elapsed = session.totalSeconds + (Date.now() - new Date(lastEvent.timestamp).getTime()) / 1000
+    return Math.max(0, Math.floor(elapsed))
+  }
+}
+
+// Helper to attach total tracked seconds to a task object
+const getTaskWithTime = async (task) => {
+  const sessions = await WorkSession.find({ task: task._id })
+  let totalTrackedSeconds = 0
+  for (const s of sessions) {
+    if (s.stoppedAt) {
+      totalTrackedSeconds += s.totalSeconds
+    } else {
+      totalTrackedSeconds += calculateSessionSeconds(s)
+    }
+  }
+  const tObj = task.toObject()
+  tObj.totalTrackedSeconds = totalTrackedSeconds
+  return tObj
+}
 
 // Get progress defaults based on status
 const getProgressForStatus = (status) => {
@@ -42,7 +76,11 @@ export const getTasks = asyncHandler(async (req, res) => {
     .populate("comments.author", "name email role")
     .sort({ updatedAt: -1 })
 
-  res.json({ tasks })
+  const tasksWithTime = await Promise.all(tasks.map(async (t) => {
+    return await getTaskWithTime(t)
+  }))
+
+  res.json({ tasks: tasksWithTime })
 })
 
 export const createTask = asyncHandler(async (req, res, next) => {
@@ -111,7 +149,8 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     .populate("department", "name")
     .populate("comments.author", "name email role")
 
-  res.json({ task: populatedTask })
+  const taskWithTime = await getTaskWithTime(populatedTask)
+  res.json({ task: taskWithTime })
 })
 
 export const addComment = asyncHandler(async (req, res, next) => {
@@ -140,5 +179,6 @@ export const addComment = asyncHandler(async (req, res, next) => {
     .populate("department", "name")
     .populate("comments.author", "name email role")
 
-  res.json({ task: populatedTask })
+  const taskWithTime = await getTaskWithTime(populatedTask)
+  res.json({ task: taskWithTime })
 })
