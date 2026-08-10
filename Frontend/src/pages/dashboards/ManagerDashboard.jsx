@@ -142,6 +142,7 @@ const ManagerDashboard = () => {
       case "In Progress": return ["Waiting for Review"]
       case "Rejected": return ["In Progress"]
       case "Reopened": return ["In Progress"]
+      case "Approved": return ["Reopened"] // Allow manager to reopen approved task
       default: return []
     }
   }
@@ -336,16 +337,14 @@ const ManagerDashboard = () => {
                               value={t.status}
                               onChange={e => {
                                 setDetailTask(t)
-                                // If they reject or approve from inline select, trigger review directly
-                                if (["Approved", "Rejected"].includes(e.target.value)) {
-                                  const comment = prompt(`Provide comments to ${e.target.value.toLowerCase()} this task:`) || "Status updated inline."
-                                  handleReview(e.target.value, comment)
-                                } else {
-                                  // Update normally
-                                  axios.put(`${API_BASE}/api/tasks/${t._id}/status`, { status: e.target.value })
-                                    .then(() => loadData())
-                                    .catch(err => console.error(err))
+                                // If they select a review action, open details modal directly so they can write Native comments
+                                if (["Approved", "Rejected", "Reopened"].includes(e.target.value)) {
+                                  return
                                 }
+                                // Update other transitions inline directly
+                                axios.put(`${API_BASE}/api/tasks/${t._id}/status`, { status: e.target.value })
+                                  .then(() => loadData())
+                                  .catch(err => console.error(err))
                               }}
                               className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             >

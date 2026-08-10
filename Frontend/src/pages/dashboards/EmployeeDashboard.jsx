@@ -93,15 +93,18 @@ const EmployeeDashboard = () => {
     }
   }
 
-  const handleStatusTransition = async (newStatus) => {
-    if (!detailTask) return
+  const handleStatusTransition = async (newStatus, taskId = null) => {
+    const targetTaskId = taskId || detailTask?._id
+    if (!targetTaskId) return
     setSubmitting(true)
     try {
-      const res = await axios.put(`${API_BASE}/api/tasks/${detailTask._id}/status`, {
+      const res = await axios.put(`${API_BASE}/api/tasks/${targetTaskId}/status`, {
         status: newStatus,
         comment: transitionComment
       })
-      setDetailTask(res.data.task)
+      if (detailTask && detailTask._id === targetTaskId) {
+        setDetailTask(res.data.task)
+      }
       setTransitionComment("")
       await loadTasks()
     } catch (err) {
@@ -149,7 +152,8 @@ const EmployeeDashboard = () => {
       switch (task.status) {
         case "Not Started": return ["Accepted"]
         case "Accepted": return ["In Progress"]
-        case "In Progress": return ["Completed"] // Labeled "Completed", maps to Approved on backend
+        case "In Progress": return ["Completed"]
+        case "Approved": return ["In Progress"] // Allow reopening self task
         default: return []
       }
     } else {
@@ -157,6 +161,8 @@ const EmployeeDashboard = () => {
         case "Not Started": return ["Accepted"]
         case "Accepted": return ["In Progress"]
         case "In Progress": return ["Waiting for Review"]
+        case "Rejected":
+        case "Reopened": return ["In Progress"] // Allow starting rejected/reopened tasks
         default: return []
       }
     }
@@ -360,8 +366,7 @@ const EmployeeDashboard = () => {
                             <select
                               value={t.status}
                               onChange={e => {
-                                setDetailTask(t)
-                                handleStatusTransition(e.target.value)
+                                handleStatusTransition(e.target.value, t._id)
                               }}
                               className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             >
