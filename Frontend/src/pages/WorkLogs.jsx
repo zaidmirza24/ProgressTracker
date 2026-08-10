@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
-import API_BASE from "../../lib/api"
+import API_BASE from "../lib/api"
 import { useAuth } from "../context/AuthContext"
 import { motion } from "motion/react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
