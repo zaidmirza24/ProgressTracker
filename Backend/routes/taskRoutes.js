@@ -8,7 +8,7 @@ const router = express.Router()
 router.use(authenticateJWT)
 
 router.get("/", getTasks)
-router.post("/", requireRole(["manager", "super_admin"]), createTask)
+router.post("/", requireRole(["manager", "super_admin", "employee"]), createTask)
 router.put("/:id/status", updateTaskStatus)
 router.post("/:id/comments", addComment)
 

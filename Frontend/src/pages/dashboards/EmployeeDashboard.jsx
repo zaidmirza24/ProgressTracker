@@ -10,11 +10,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   ClipboardList, CheckCircle2, Clock, Calendar,
   MessageSquare, Send, User, BarChart3,
-  Play, Pause, Square, AlertCircle, ArrowUpRight
+  Play, Pause, Square, AlertCircle, Plus, Check
 } from "lucide-react"
 
 const STATUS_VARIANTS = {
@@ -40,8 +41,13 @@ const EmployeeDashboard = () => {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailTask, setDetailTask] = useState(null)
+  const [createOpen, setCreateOpen] = useState(false)
   
   // Forms
+  const [taskForm, setTaskForm] = useState({
+    title: "", description: "", category: "General",
+    priority: "medium", estimatedHours: 0, dueDate: ""
+  })
   const [transitionComment, setTransitionComment] = useState("")
   const [newComment, setNewComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -68,6 +74,24 @@ const EmployeeDashboard = () => {
       if (updated) setDetailTask(updated)
     }
   }, [tasks])
+
+  const handleCreateTask = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await axios.post(`${API_BASE}/api/tasks`, taskForm)
+      await loadTasks()
+      setCreateOpen(false)
+      setTaskForm({
+        title: "", description: "", category: "General",
+        priority: "medium", estimatedHours: 0, dueDate: ""
+      })
+    } catch (err) {
+      console.error("Error creating self-assigned task:", err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const handleStatusTransition = async (newStatus) => {
     if (!detailTask) return
@@ -117,44 +141,45 @@ const EmployeeDashboard = () => {
     return `${pad(mins)}:${pad(secs)}`
   }
 
-  // Helper to determine next transition options
-  const renderTransitionButtons = (task) => {
-    const btnStyle = "w-full sm:w-auto font-semibold shadow-sm"
-    switch (task.status) {
-      case "Not Started":
-        return (
-          <Button
-            className={btnStyle}
-            onClick={() => handleStatusTransition("Accepted")}
-            disabled={submitting}
-          >
-            Accept Task
-          </Button>
-        )
-      case "Accepted":
-      case "Reopened":
-      case "Rejected":
-        return (
-          <Button
-            className={btnStyle}
-            onClick={() => handleStatusTransition("In Progress")}
-            disabled={submitting}
-          >
-            Start Work
-          </Button>
-        )
-      case "In Progress":
-        return (
-          <Button
-            className={btnStyle}
-            onClick={() => handleStatusTransition("Waiting for Review")}
-            disabled={submitting}
-          >
-            Submit for Review
-          </Button>
-        )
-      default:
-        return null
+  // Get available transitions based on task type (self-assigned vs manager-assigned)
+  const getNextStatuses = (task) => {
+    const isSelfCreated = task.assignedBy?._id === task.assignedTo?._id || task.assignedBy === task.assignedTo
+
+    if (isSelfCreated) {
+      switch (task.status) {
+        case "Not Started": return ["Accepted"]
+        case "Accepted": return ["In Progress"]
+        case "In Progress": return ["Completed"] // Labeled "Completed", maps to Approved on backend
+        default: return []
+      }
+    } else {
+      switch (task.status) {
+        case "Not Started": return ["Accepted"]
+        case "Accepted": return ["In Progress"]
+        case "In Progress": return ["Waiting for Review"]
+        default: return []
+      }
+    }
+  }
+
+  // Visual Stepper steps configuration
+  const getStepperSteps = (task) => {
+    const isSelfCreated = task.assignedBy?._id === task.assignedTo?._id || task.assignedBy === task.assignedTo
+    if (isSelfCreated) {
+      return [
+        { label: "Not Started", key: "Not Started" },
+        { label: "Accepted", key: "Accepted" },
+        { label: "In Progress", key: "In Progress" },
+        { label: "Completed", key: "Approved" } // Handled as Approved internally
+      ]
+    } else {
+      return [
+        { label: "Not Started", key: "Not Started" },
+        { label: "Accepted", key: "Accepted" },
+        { label: "In Progress", key: "In Progress" },
+        { label: "In Review", key: "Waiting for Review" },
+        { label: "Approved", key: "Approved" }
+      ]
     }
   }
 
@@ -164,13 +189,18 @@ const EmployeeDashboard = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
-          My Workspace
-        </h2>
-        <p className="text-muted-foreground">
-          Welcome back, <strong className="text-foreground">{user?.name}</strong>. Start timers on your assigned tasks, record log hours, and submit work reviews.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
+            My Workspace
+          </h2>
+          <p className="text-muted-foreground">
+            Welcome back, <strong className="text-foreground">{user?.name}</strong>. Start timers on your assigned tasks, record log hours, and submit work reviews.
+          </p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
+          <Plus className="h-4.5 w-4.5" /> Create Task
+        </Button>
       </div>
 
       {/* Metrics Cards */}
@@ -248,7 +278,7 @@ const EmployeeDashboard = () => {
                   <TableHead className="font-semibold text-foreground/80">Assigned By</TableHead>
                   <TableHead className="font-semibold text-foreground/80">Priority</TableHead>
                   <TableHead className="font-semibold text-foreground/80">Due Date</TableHead>
-                  <TableHead className="font-semibold text-foreground/80">Status</TableHead>
+                  <TableHead className="font-semibold text-foreground/80">Status Workflow</TableHead>
                   <TableHead className="font-semibold text-foreground/80 text-center">Track Time</TableHead>
                   <TableHead className="font-semibold text-foreground/80 text-right">Progress</TableHead>
                 </TableRow>
@@ -273,7 +303,7 @@ const EmployeeDashboard = () => {
                         <div className="space-y-1">
                           <h4 className="font-bold text-foreground">No tasks assigned</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Once your manager assigns a task to your name, it will show up here.
+                            Once your manager assigns a task to your name or you create one yourself, it will show up here.
                           </p>
                         </div>
                       </div>
@@ -282,6 +312,9 @@ const EmployeeDashboard = () => {
                 ) : (
                   tasks.map(t => {
                     const isTaskActive = activeSession && activeSession.task?._id === t._id
+                    const nextOptions = getNextStatuses(t)
+                    const isSelfCreated = t.assignedBy?._id === t.assignedTo?._id || t.assignedBy === t.assignedTo
+                    
                     return (
                       <TableRow
                         key={t._id}
@@ -292,7 +325,12 @@ const EmployeeDashboard = () => {
                       >
                         <TableCell className="font-medium">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-bold text-foreground/90 group-hover:text-primary transition-colors">{t.title}</span>
+                            <span className="text-sm font-bold text-foreground/90 group-hover:text-primary transition-colors flex items-center gap-1.5">
+                              {t.title}
+                              {isSelfCreated && (
+                                <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
+                              )}
+                            </span>
                             <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">{t.category}</span>
                           </div>
                         </TableCell>
@@ -301,7 +339,7 @@ const EmployeeDashboard = () => {
                             <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                               {t.assignedBy?.name ? t.assignedBy.name[0].toUpperCase() : "M"}
                             </div>
-                            <span>{t.assignedBy?.name || "Manager"}</span>
+                            <span>{isSelfCreated ? "Self-Assigned" : (t.assignedBy?.name || "Manager")}</span>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -317,10 +355,26 @@ const EmployeeDashboard = () => {
                             </span>
                           ) : "—"}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
-                            {t.status}
-                          </Badge>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          {nextOptions.length > 0 ? (
+                            <select
+                              value={t.status}
+                              onChange={e => {
+                                setDetailTask(t)
+                                handleStatusTransition(e.target.value)
+                              }}
+                              className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value={t.status}>{t.status}</option>
+                              {nextOptions.map(opt => (
+                                <option key={opt} value={opt}>➔ {opt === "Completed" ? "Complete Task" : opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
+                              {t.status === "Approved" && isSelfCreated ? "Completed" : t.status}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="text-center" onClick={e => e.stopPropagation()}>
                           {isTaskActive ? (
@@ -389,6 +443,96 @@ const EmployeeDashboard = () => {
         </CardContent>
       </Card>
 
+      {/* Create Task Modal */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[480px] border-border/60">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold tracking-tight text-foreground">Create Self Task</DialogTitle>
+            <DialogDescription>Define a task to work on. It will be assigned to yourself automatically.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTask} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="task-title" className="text-foreground/80 font-medium">Title *</Label>
+              <Input
+                id="task-title"
+                value={taskForm.title}
+                onChange={e => setTaskForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Wire up UI context"
+                className="h-10 rounded-lg"
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="task-desc" className="text-foreground/80 font-medium">Description</Label>
+              <Textarea
+                id="task-desc"
+                value={taskForm.description}
+                onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="Task specifications..."
+                className="rounded-lg"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="task-cat" className="text-foreground/80 font-medium">Category</Label>
+                <Input
+                  id="task-cat"
+                  value={taskForm.category}
+                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="e.g. Design"
+                  className="h-10 rounded-lg"
+                />
+              </div>
+              <div className="space-y-1.5 flex flex-col">
+                <Label htmlFor="task-priority" className="mb-1 text-foreground/80 font-medium">Priority</Label>
+                <select
+                  id="task-priority"
+                  value={taskForm.priority}
+                  onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}
+                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="low" className="bg-card text-foreground">Low</option>
+                  <option value="medium" className="bg-card text-foreground">Medium</option>
+                  <option value="high" className="bg-card text-foreground">High</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
+                <Input
+                  type="number"
+                  id="task-hours"
+                  value={taskForm.estimatedHours}
+                  onChange={e => setTaskForm(f => ({ ...f, estimatedHours: Number(e.target.value) }))}
+                  min="0"
+                  className="h-10 rounded-lg"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-due" className="text-foreground/80 font-medium">Due Date</Label>
+                <Input
+                  type="date"
+                  id="task-due"
+                  value={taskForm.dueDate}
+                  onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))}
+                  className="h-10 rounded-lg text-foreground bg-transparent"
+                />
+              </div>
+            </div>
+            <DialogFooter className="pt-4 gap-2">
+              <Button type="button" variant="ghost" className="rounded-lg h-10" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="rounded-lg h-10 shadow font-semibold" disabled={submitting}>
+                {submitting ? "Creating…" : "Add Task"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Task Detail Modal */}
       <Dialog open={detailTask !== null} onOpenChange={() => setDetailTask(null)}>
         {detailTask && (
@@ -397,13 +541,62 @@ const EmployeeDashboard = () => {
               <div className="flex items-center justify-between pr-6 gap-4">
                 <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{detailTask.title}</DialogTitle>
                 <Badge variant={STATUS_VARIANTS[detailTask.status] || "default"} className="font-bold shrink-0">
-                  {detailTask.status}
+                  {(detailTask.assignedBy?._id === detailTask.assignedTo?._id || detailTask.assignedBy === detailTask.assignedTo) && detailTask.status === "Approved" ? "Completed" : detailTask.status}
                 </Badge>
               </div>
               <DialogDescription className="text-xs uppercase tracking-wider font-semibold text-primary">{detailTask.category}</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5 py-2">
+            <div className="space-y-6 py-2">
+              {/* VISUAL WORKFLOW STEPPER */}
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Workflow Timeline</h4>
+                <div className="flex items-center justify-between relative px-2 py-4 bg-muted/20 border border-border/30 rounded-xl overflow-x-auto">
+                  {getStepperSteps(detailTask).map((step, idx, arr) => {
+                    const isSelfCreated = detailTask.assignedBy?._id === detailTask.assignedTo?._id || detailTask.assignedBy === detailTask.assignedTo
+                    
+                    // Determine status active / completed status
+                    const currentIdx = arr.findIndex(s => s.key === detailTask.status)
+                    const isCompleted = idx < currentIdx || detailTask.status === "Approved" || detailTask.status === "Completed"
+                    const isActive = idx === currentIdx && detailTask.status !== "Approved" && detailTask.status !== "Completed"
+                    const isClickable = idx === currentIdx + 1 && !["Approved", "Completed"].includes(detailTask.status)
+
+                    return (
+                      <div key={step.key} className="flex items-center flex-1 last:flex-none">
+                        <div className="flex flex-col items-center gap-1.5 relative z-10">
+                          <button
+                            type="button"
+                            disabled={!isClickable || submitting}
+                            onClick={() => handleStatusTransition(step.key === "Approved" && isSelfCreated ? "Completed" : step.key)}
+                            className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                              isCompleted 
+                                ? "bg-green-500 text-white shadow-sm border border-green-600" 
+                                : isActive 
+                                  ? "bg-primary text-primary-foreground font-extrabold ring-4 ring-primary/20 scale-110" 
+                                  : isClickable 
+                                    ? "bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer animate-pulse" 
+                                    : "bg-muted/80 text-muted-foreground border border-border"
+                            }`}
+                          >
+                            {isCompleted ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                          </button>
+                          <span className={`text-[10px] font-bold whitespace-nowrap ${
+                            isActive ? "text-foreground" : "text-muted-foreground"
+                          }`}>
+                            {step.label}
+                          </span>
+                        </div>
+                        {idx < arr.length - 1 && (
+                          <div className={`h-0.5 flex-1 min-w-[30px] mx-2 ${
+                            isCompleted ? "bg-green-500" : "bg-border"
+                          }`} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* Task Details Info */}
               <div className="grid grid-cols-2 gap-4 text-xs border-y border-border/40 py-4 bg-muted/10 px-3 rounded-lg">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -470,26 +663,6 @@ const EmployeeDashboard = () => {
                         <Play className="h-3.5 w-3.5 mr-1.5" /> Start Timer
                       </Button>
                     )}
-                  </div>
-                </div>
-              )}
-
-              {/* Employee Workflow Gating Panels */}
-              {renderTransitionButtons(detailTask) && (
-                <div className="space-y-3.5 p-4 rounded-xl border border-border/40 bg-primary/[0.02]">
-                  <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Workflow Transition</h4>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="trans-comm" className="text-xs text-muted-foreground">Transition Comments (optional)</Label>
-                    <Input
-                      id="trans-comm"
-                      placeholder="e.g. Completed initial design, waiting for feedback..."
-                      value={transitionComment}
-                      onChange={e => setTransitionComment(e.target.value)}
-                      className="h-9 rounded-lg"
-                    />
-                  </div>
-                  <div className="flex justify-end pt-1">
-                    {renderTransitionButtons(detailTask)}
                   </div>
                 </div>
               )}

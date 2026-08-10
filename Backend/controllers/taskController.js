@@ -48,7 +48,9 @@ export const getTasks = asyncHandler(async (req, res) => {
 export const createTask = asyncHandler(async (req, res, next) => {
   const { title, description, category, department, assignedTo, priority, estimatedHours, dueDate } = req.body
 
-  if (!title || !assignedTo) {
+  const targetAssignedTo = req.user.role === "employee" ? req.user.id : assignedTo
+
+  if (!title || !targetAssignedTo) {
     return next(new AppError("Title and assignedTo fields are required", 400))
   }
 
@@ -58,7 +60,7 @@ export const createTask = asyncHandler(async (req, res, next) => {
     category: category || "General",
     department: department || null,
     assignedBy: req.user.id,
-    assignedTo,
+    assignedTo: targetAssignedTo,
     priority: priority || "medium",
     estimatedHours: estimatedHours || 0,
     dueDate: dueDate || null,
@@ -83,9 +85,15 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     return next(new AppError("Task not found", 404))
   }
 
+  let finalStatus = status
+  // If the task is self-assigned, and it is transitioned to Waiting for Review or Completed, direct complete to Approved
+  if (task.assignedBy.toString() === task.assignedTo.toString() && ["Waiting for Review", "Completed"].includes(status)) {
+    finalStatus = "Approved"
+  }
+
   // Update status and default progress
-  task.status = status
-  task.progressPercentage = getProgressForStatus(status)
+  task.status = finalStatus
+  task.progressPercentage = getProgressForStatus(finalStatus)
 
   // Append optional transition comment
   if (comment && comment.trim()) {

@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   ClipboardList, CheckCircle2, Clock, BarChart3,
-  Plus, MessageSquare, Send, Calendar, User, UserCheck, FileText, AlertCircle
+  Plus, MessageSquare, Send, Calendar, User, UserCheck, FileText, AlertCircle, Check
 } from "lucide-react"
 
 const STATUS_VARIANTS = {
@@ -100,13 +100,13 @@ const ManagerDashboard = () => {
     }
   }
 
-  const handleReview = async (status) => {
+  const handleReview = async (status, feedbackOverride = "") => {
     if (!detailTask) return
     setSubmitting(true)
     try {
       const res = await axios.put(`${API_BASE}/api/tasks/${detailTask._id}/status`, {
         status,
-        comment: reviewComment
+        comment: feedbackOverride || reviewComment
       })
       setDetailTask(res.data.task)
       setReviewComment("")
@@ -130,6 +130,40 @@ const ManagerDashboard = () => {
       await loadData()
     } catch (err) {
       console.error("Error adding comment:", err)
+    }
+  }
+
+  // Get available transitions for manager inline dropdown
+  const getNextStatusesForManager = (task) => {
+    switch (task.status) {
+      case "Waiting for Review": return ["Approved", "Rejected"]
+      case "Not Started": return ["Accepted", "In Progress"]
+      case "Accepted": return ["In Progress"]
+      case "In Progress": return ["Waiting for Review"]
+      case "Rejected": return ["In Progress"]
+      case "Reopened": return ["In Progress"]
+      default: return []
+    }
+  }
+
+  // Visual Stepper steps configuration
+  const getStepperSteps = (task) => {
+    const isSelfCreated = task.assignedBy?._id === task.assignedTo?._id || task.assignedBy === task.assignedTo
+    if (isSelfCreated) {
+      return [
+        { label: "Not Started", key: "Not Started" },
+        { label: "Accepted", key: "Accepted" },
+        { label: "In Progress", key: "In Progress" },
+        { label: "Completed", key: "Approved" }
+      ]
+    } else {
+      return [
+        { label: "Not Started", key: "Not Started" },
+        { label: "Accepted", key: "Accepted" },
+        { label: "In Progress", key: "In Progress" },
+        { label: "In Review", key: "Waiting for Review" },
+        { label: "Approved", key: "Approved" }
+      ]
     }
   }
 
@@ -223,7 +257,7 @@ const ManagerDashboard = () => {
                   <TableHead className="font-semibold text-foreground/80">Assigned To</TableHead>
                   <TableHead className="font-semibold text-foreground/80">Priority</TableHead>
                   <TableHead className="font-semibold text-foreground/80">Due Date</TableHead>
-                  <TableHead className="font-semibold text-foreground/80">Status</TableHead>
+                  <TableHead className="font-semibold text-foreground/80">Status Workflow</TableHead>
                   <TableHead className="font-semibold text-foreground/80 text-right">Progress</TableHead>
                 </TableRow>
               </TableHeader>
@@ -254,59 +288,94 @@ const ManagerDashboard = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  tasks.map(t => (
-                    <TableRow
-                      key={t._id}
-                      className="hover:bg-muted/30 cursor-pointer transition-colors"
-                      onClick={() => setDetailTask(t)}
-                    >
-                      <TableCell className="font-medium">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-bold text-foreground/90">{t.title}</span>
-                          <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">{t.category}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-5 w-5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[9px] font-bold flex items-center justify-center">
-                            {t.assignedTo?.name ? t.assignedTo.name[0].toUpperCase() : "—"}
+                  tasks.map(t => {
+                    const nextOptions = getNextStatusesForManager(t)
+                    const isSelfCreated = t.assignedBy?._id === t.assignedTo?._id || t.assignedBy === t.assignedTo
+                    
+                    return (
+                      <TableRow
+                        key={t._id}
+                        className="hover:bg-muted/30 cursor-pointer transition-colors"
+                        onClick={() => setDetailTask(t)}
+                      >
+                        <TableCell className="font-medium">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-bold text-foreground/90 flex items-center gap-1.5">
+                              {t.title}
+                              {isSelfCreated && (
+                                <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
+                              )}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider">{t.category}</span>
                           </div>
-                          <span>{t.assignedTo?.name || "—"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={PRIORITY_VARIANTS[t.priority]} className="capitalize text-[10px] py-0.5 px-2 rounded-md font-bold">
-                          {t.priority}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                        {t.dueDate ? (
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
-                            {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          </span>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
-                          {t.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden hidden sm:block">
-                            <div 
-                              className="bg-primary h-full rounded-full transition-all duration-300"
-                              style={{ width: `${t.progressPercentage}%` }}
-                            ></div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-5 w-5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[9px] font-bold flex items-center justify-center">
+                              {t.assignedTo?.name ? t.assignedTo.name[0].toUpperCase() : "—"}
+                            </div>
+                            <span>{t.assignedTo?.name || "—"}</span>
                           </div>
-                          <span className="font-mono text-xs font-semibold text-foreground/80">
-                            {t.progressPercentage}%
-                          </span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={PRIORITY_VARIANTS[t.priority]} className="capitalize text-[10px] py-0.5 px-2 rounded-md font-bold">
+                            {t.priority}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                          {t.dueDate ? (
+                            <span className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
+                              {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                          ) : "—"}
+                        </TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          {nextOptions.length > 0 ? (
+                            <select
+                              value={t.status}
+                              onChange={e => {
+                                setDetailTask(t)
+                                // If they reject or approve from inline select, trigger review directly
+                                if (["Approved", "Rejected"].includes(e.target.value)) {
+                                  const comment = prompt(`Provide comments to ${e.target.value.toLowerCase()} this task:`) || "Status updated inline."
+                                  handleReview(e.target.value, comment)
+                                } else {
+                                  // Update normally
+                                  axios.put(`${API_BASE}/api/tasks/${t._id}/status`, { status: e.target.value })
+                                    .then(() => loadData())
+                                    .catch(err => console.error(err))
+                                }
+                              }}
+                              className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value={t.status}>{t.status}</option>
+                              {nextOptions.map(opt => (
+                                <option key={opt} value={opt}>➔ {opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
+                              {t.status}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 bg-muted rounded-full h-1.5 overflow-hidden hidden sm:block">
+                              <div 
+                                className="bg-primary h-full rounded-full transition-all duration-300"
+                                style={{ width: `${t.progressPercentage}%` }}
+                              ></div>
+                            </div>
+                            <span className="font-mono text-xs font-semibold text-foreground/80">
+                              {t.progressPercentage}%
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
@@ -449,7 +518,50 @@ const ManagerDashboard = () => {
               <DialogDescription className="text-xs uppercase tracking-wider font-semibold text-primary">{detailTask.category}</DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-5 py-2">
+            <div className="space-y-6 py-2">
+              {/* VISUAL WORKFLOW STEPPER */}
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Workflow Timeline</h4>
+                <div className="flex items-center justify-between relative px-2 py-4 bg-muted/20 border border-border/30 rounded-xl overflow-x-auto">
+                  {getStepperSteps(detailTask).map((step, idx, arr) => {
+                    const isSelfCreated = detailTask.assignedBy?._id === detailTask.assignedTo?._id || detailTask.assignedBy === detailTask.assignedTo
+                    
+                    // Determine status active / completed status
+                    const currentIdx = arr.findIndex(s => s.key === detailTask.status)
+                    const isCompleted = idx < currentIdx || detailTask.status === "Approved" || detailTask.status === "Completed"
+                    const isActive = idx === currentIdx && detailTask.status !== "Approved" && detailTask.status !== "Completed"
+
+                    return (
+                      <div key={step.key} className="flex items-center flex-1 last:flex-none">
+                        <div className="flex flex-col items-center gap-1.5 relative z-10">
+                          <div
+                            className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                              isCompleted 
+                                ? "bg-green-500 text-white shadow-sm border border-green-600" 
+                                : isActive 
+                                  ? "bg-primary text-primary-foreground font-extrabold ring-4 ring-primary/20 scale-110" 
+                                  : "bg-muted/80 text-muted-foreground border border-border"
+                            }`}
+                          >
+                            {isCompleted ? <Check className="h-3.5 w-3.5" /> : idx + 1}
+                          </div>
+                          <span className={`text-[10px] font-bold whitespace-nowrap ${
+                            isActive ? "text-foreground" : "text-muted-foreground"
+                          }`}>
+                            {step.label}
+                          </span>
+                        </div>
+                        {idx < arr.length - 1 && (
+                          <div className={`h-0.5 flex-1 min-w-[30px] mx-2 ${
+                            isCompleted ? "bg-green-500" : "bg-border"
+                          }`} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* Task Details Info */}
               <div className="grid grid-cols-2 gap-4 text-xs border-y border-border/40 py-4 bg-muted/10 px-3 rounded-lg">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -491,7 +603,7 @@ const ManagerDashboard = () => {
                       id="review-comm"
                       placeholder="Add design review notes, request fixes, or log acceptance..."
                       value={reviewComment}
-                      onChange={e => setReviewComment(e.target.value)}
+                      onChange={e => setNewComment(e.target.value)}
                       className="h-9 rounded-lg"
                     />
                   </div>
