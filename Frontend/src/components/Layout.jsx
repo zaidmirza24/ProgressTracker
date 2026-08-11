@@ -267,9 +267,9 @@ const Layout = () => {
   )
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:block w-64 border-r border-border bg-sidebar flex-shrink-0">
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Desktop Sidebar — fixed height, no scroll on page */}
+      <aside className="hidden lg:flex lg:flex-col w-64 border-r border-border bg-sidebar flex-shrink-0 h-screen">
         {sidebarContent}
       </aside>
 
@@ -317,9 +317,9 @@ const Layout = () => {
         )}
       </AnimatePresence>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 pt-16 lg:pt-0">
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto max-w-7xl w-full mx-auto">
+      {/* Main Content Area — only this scrolls */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto pt-16 lg:pt-0">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
           <motion.div
             key={location.pathname}
             initial={{ opacity: 0, y: 12 }}

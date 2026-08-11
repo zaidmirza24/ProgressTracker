@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Building2, Users, UserPlus, Pencil, AlertTriangle, User, Mail, Shield, Plus, AlertCircle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 
 
 // ─── Departments Tab ─────────────────────────────────────────────────────────
@@ -21,10 +22,15 @@ const DepartmentsTab = () => {
   const [modal, setModal] = useState(null) // null | "create" | dept object
   const [form, setForm] = useState({ name: "", description: "" })
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
-    const res = await axios.get(`${API_BASE}/api/departments`)
-    setDepartments(res.data.departments)
+    try {
+      const res = await axios.get(`${API_BASE}/api/departments`)
+      setDepartments(res.data.departments)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -53,6 +59,32 @@ const DepartmentsTab = () => {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <Card className="border-border/40 shadow-lg bg-card/30 backdrop-blur-sm">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-36" />
+            <Skeleton className="h-3 w-52" />
+          </div>
+          <Skeleton className="h-9 w-36" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-4 pb-2 border-b border-border/50">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-3" />)}
+            </div>
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="grid grid-cols-4 gap-4 py-2">
+                {[...Array(4)].map((_, j) => <Skeleton key={j} className="h-4" />)}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -168,14 +200,19 @@ const TeamsTab = () => {
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ name: "", department: "" })
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
-    const [tRes, dRes] = await Promise.all([
-      axios.get(`${API_BASE}/api/teams`),
-      axios.get(`${API_BASE}/api/departments`)
-    ])
-    setTeams(tRes.data.teams)
-    setDepartments(dRes.data.departments)
+    try {
+      const [tRes, dRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/teams`),
+        axios.get(`${API_BASE}/api/departments`)
+      ])
+      setTeams(tRes.data.teams)
+      setDepartments(dRes.data.departments)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -205,6 +242,32 @@ const TeamsTab = () => {
     } finally {
       setSaving(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <Card className="border-border/40 shadow-lg bg-card/30 backdrop-blur-sm">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-28" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+          <Skeleton className="h-9 w-28" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-4 pb-2 border-b border-border/50">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-3" />)}
+            </div>
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="grid grid-cols-4 gap-4 py-2">
+                {[...Array(4)].map((_, j) => <Skeleton key={j} className="h-4" />)}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -340,20 +403,25 @@ const UsersTab = () => {
   const [teams, setTeams] = useState([])
   const [modal, setModal] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
     name: "", email: "", password: "", role: "employee",
     department: "", team: "", manager: ""
   })
 
   const load = async () => {
-    const [uRes, dRes, tRes] = await Promise.all([
-      axios.get(`${API_BASE}/api/users`),
-      axios.get(`${API_BASE}/api/departments`),
-      axios.get(`${API_BASE}/api/teams`)
-    ])
-    setUsers(uRes.data.users)
-    setDepartments(dRes.data.departments)
-    setTeams(tRes.data.teams)
+    try {
+      const [uRes, dRes, tRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/users`),
+        axios.get(`${API_BASE}/api/departments`),
+        axios.get(`${API_BASE}/api/teams`)
+      ])
+      setUsers(uRes.data.users)
+      setDepartments(dRes.data.departments)
+      setTeams(tRes.data.teams)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -406,6 +474,32 @@ const UsersTab = () => {
     : []
 
   const managers = users.filter(u => u.role === "manager")
+
+  if (loading) {
+    return (
+      <Card className="border-border/40 shadow-lg bg-card/30 backdrop-blur-sm">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-6 w-24" />
+            <Skeleton className="h-3 w-44" />
+          </div>
+          <Skeleton className="h-9 w-24" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="grid grid-cols-6 gap-4 pb-2 border-b border-border/50">
+              {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-3" />)}
+            </div>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="grid grid-cols-6 gap-4 py-2">
+                {[...Array(6)].map((_, j) => <Skeleton key={j} className="h-4" />)}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="border-border/40 shadow-lg bg-card/30 backdrop-blur-sm">

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ClipboardList, CheckCircle2, Clock, Calendar,
   MessageSquare, Send, User, BarChart3,
@@ -223,6 +224,57 @@ const EmployeeDashboard = () => {
   // Metrics
   const activeCount = tasks.filter(t => ["In Progress", "Accepted"].includes(t.status)).length
   const completedCount = tasks.filter(t => ["Approved", "Completed"].includes(t.status)).length
+
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        {/* Header skeleton */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-9 w-52" />
+            <Skeleton className="h-4 w-80" />
+          </div>
+          <Skeleton className="h-10 w-32 self-start sm:self-auto" />
+        </div>
+
+        {/* Metric cards skeleton */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="border-border/50 overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-5 w-5 rounded" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-36" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Table skeleton */}
+        <Card className="border-border/50">
+          <CardHeader>
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-4 w-64 mt-1" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="grid grid-cols-5 gap-4 pb-2 border-b border-border/50">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-3" />)}
+              </div>
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="grid grid-cols-5 gap-4 py-2">
+                  {[...Array(5)].map((_, j) => <Skeleton key={j} className="h-4" />)}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">
