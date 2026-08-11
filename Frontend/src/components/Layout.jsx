@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, Outlet, useLocation } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 import { useTimer } from "../context/TimerContext"
+import { useTheme } from "../context/ThemeContext"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +10,7 @@ import { motion, AnimatePresence } from "motion/react"
 import {
   Building2, Users, ClipboardList, Timer, FileText,
   LayoutDashboard, LogOut, ChevronRight, BarChart3, UserPlus,
-  Play, Pause, Square, Menu, X, ArrowUpRight
+  Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon
 } from "lucide-react"
 
 const ROLE_CONFIG = {
@@ -52,6 +53,7 @@ const ROLE_CONFIG = {
 const Layout = () => {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const { theme, toggleTheme } = useTheme()
   const { activeSession, elapsedSeconds, isRunning, pauseTimer, resumeTimer, stopTimer } = useTimer()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -77,7 +79,7 @@ const Layout = () => {
       {/* Brand Logo */}
       <div className="p-6 flex items-center justify-between border-b border-sidebar-border/40">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary to-violet-500 flex items-center justify-center glow-primary">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary to-cyan-400 flex items-center justify-center glow-primary">
             <BarChart3 className="h-5 w-5 text-white" />
           </div>
           <div className="flex flex-col">
@@ -207,11 +209,54 @@ const Layout = () => {
         </div>
       )}
 
-      {/* Logout Footer */}
-      <div className="p-4 border-t border-sidebar-border/40 bg-sidebar/50">
+      {/* Footer: Theme Toggle + Logout */}
+      <div className="p-4 border-t border-sidebar-border/40 bg-sidebar/50 flex items-center gap-2">
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          className="relative h-10 w-16 rounded-full border border-border bg-muted/60 flex items-center transition-colors duration-300 hover:border-primary/40 hover:bg-muted flex-shrink-0 overflow-hidden"
+        >
+          {/* Track icons */}
+          <Sun className="absolute left-2 h-3.5 w-3.5 text-warning/70" />
+          <Moon className="absolute right-2 h-3.5 w-3.5 text-primary/70" />
+          {/* Thumb */}
+          <motion.div
+            layout
+            animate={{ x: theme === "dark" ? 28 : 4 }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            className="h-7 w-7 rounded-full bg-primary shadow-md flex items-center justify-center z-10 flex-shrink-0"
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              {theme === "dark" ? (
+                <motion.span
+                  key="moon"
+                  initial={{ rotate: -90, opacity: 0, scale: 0.5 }}
+                  animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                  exit={{ rotate: 90, opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <Moon className="h-3.5 w-3.5 text-primary-foreground" />
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="sun"
+                  initial={{ rotate: 90, opacity: 0, scale: 0.5 }}
+                  animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                  exit={{ rotate: -90, opacity: 0, scale: 0.5 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <Sun className="h-3.5 w-3.5 text-primary-foreground" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </button>
+
+        {/* Logout */}
         <Button
           variant="ghost"
-          className="w-full justify-start gap-3 text-sm h-10 text-destructive/80 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+          className="flex-1 justify-start gap-3 text-sm h-10 text-destructive/80 hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
           onClick={logout}
         >
           <LogOut className="h-4.5 w-4.5" />

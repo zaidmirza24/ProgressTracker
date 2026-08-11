@@ -60,6 +60,12 @@ app.get("/", (req, res) => {
   res.json({ status: "ok", message: "API is running" })
 })
 
+// Lightweight keep-alive endpoint for external uptime monitors (e.g. UptimeRobot)
+// Intentionally has no DB query, no auth, and no business logic.
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" })
+})
+
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",

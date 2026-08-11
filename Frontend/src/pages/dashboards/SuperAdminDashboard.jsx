@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Building2, Users, UserPlus, Pencil, AlertTriangle, User, Mail, Shield, Plus, AlertCircle } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
 
 // ─── Departments Tab ─────────────────────────────────────────────────────────
 const DepartmentsTab = () => {
@@ -190,6 +192,7 @@ const TeamsTab = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!form.department) return
     setSaving(true)
     try {
       if (modal === "create") {
@@ -286,18 +289,21 @@ const TeamsTab = () => {
               </div>
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="team-dept" className="mb-1 text-foreground/80 font-medium">Department *</Label>
-                <select
-                  id="team-dept"
+                <Select
                   value={form.department}
-                  onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                  required
-                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onValueChange={val => setForm(f => ({ ...f, department: val }))}
                 >
-                  <option value="" className="bg-card text-foreground">— Select Department —</option>
-                  {departments.map(d => (
-                    <option key={d._id} value={d._id} className="bg-card text-foreground">{d.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="— Select Department —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departments.map(d => (
+                      <SelectItem key={d._id} value={d._id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <DialogFooter className="pt-4 gap-2">
                 <Button type="button" variant="ghost" className="rounded-lg h-10" onClick={() => setModal(null)}>
@@ -533,62 +539,96 @@ const UsersTab = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5 flex flex-col">
                   <Label htmlFor="user-role" className="mb-1 text-foreground/80 font-medium">Role *</Label>
-                  <select
-                    id="user-role"
+                  <Select
                     value={form.role}
-                    onChange={e => setForm(f => ({ ...f, role: e.target.value, manager: "" }))}
-                    className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onValueChange={val => setForm(f => ({ ...f, role: val, manager: "" }))}
                   >
-                    <option value="employee" className="bg-card text-foreground">Employee</option>
-                    <option value="manager" className="bg-card text-foreground">Manager</option>
-                    <option value="super_admin" className="bg-card text-foreground">Super Admin</option>
-                  </select>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="Select Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground">👤</span> Employee
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="manager">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-sky-500">🔷</span> Manager
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="super_admin">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-violet-500">👑</span> Super Admin
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5 flex flex-col">
                   <Label htmlFor="user-dept" className="mb-1 text-foreground/80 font-medium">Department</Label>
-                  <select
-                    id="user-dept"
-                    value={form.department}
-                    onChange={e => setForm(f => ({ ...f, department: e.target.value, team: "" }))}
-                    className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  <Select
+                    value={form.department || "none"}
+                    onValueChange={val => setForm(f => ({ ...f, department: val === "none" ? "" : val, team: "" }))}
                   >
-                    <option value="" className="bg-card text-foreground">— None —</option>
-                    {departments.map(d => (
-                      <option key={d._id} value={d._id} className="bg-card text-foreground">{d.name}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="— None —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      {departments.map(d => (
+                        <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5 flex flex-col">
                   <Label htmlFor="user-team" className="mb-1 text-foreground/80 font-medium">Team</Label>
-                  <select
-                    id="user-team"
-                    value={form.team}
-                    onChange={e => setForm(f => ({ ...f, team: e.target.value }))}
+                  <Select
+                    value={form.team || "none"}
+                    onValueChange={val => setForm(f => ({ ...f, team: val === "none" ? "" : val }))}
                     disabled={!form.department}
-                    className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                   >
-                    <option value="" className="bg-card text-foreground">— None —</option>
-                    {filteredTeams.map(t => (
-                      <option key={t._id} value={t._id} className="bg-card text-foreground">{t.name}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue placeholder="— None —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      {filteredTeams.map(t => (
+                        <SelectItem key={t._id} value={t._id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 {form.role === "employee" ? (
                   <div className="space-y-1.5 flex flex-col">
                     <Label htmlFor="user-manager" className="mb-1 text-foreground/80 font-medium">Manager</Label>
-                    <select
-                      id="user-manager"
-                      value={form.manager}
-                      onChange={e => setForm(f => ({ ...f, manager: e.target.value }))}
-                      className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    <Select
+                      value={form.manager || "none"}
+                      onValueChange={val => setForm(f => ({ ...f, manager: val === "none" ? "" : val }))}
                     >
-                      <option value="" className="bg-card text-foreground">— None —</option>
-                      {managers.map(m => (
-                        <option key={m._id} value={m._id} className="bg-card text-foreground">{m.name}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="— None —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {managers.map(m => {
+                          const initials = m.name ? m.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "M"
+                          return (
+                            <SelectItem key={m._id} value={m._id}>
+                              <span className="flex items-center gap-2">
+                                <span className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold flex items-center justify-center">
+                                  {initials}
+                                </span>
+                                {m.name}
+                              </span>
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
                   </div>
                 ) : (
                   <div className="space-y-1.5 flex flex-col justify-end">

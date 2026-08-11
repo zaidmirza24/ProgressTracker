@@ -12,10 +12,11 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   ClipboardList, CheckCircle2, Clock, Calendar,
   MessageSquare, Send, User, BarChart3,
-  Play, Pause, Square, AlertCircle, Plus, Check
+  Play, Pause, Square, AlertCircle, Plus, Check, Loader2
 } from "lucide-react"
 
 const STATUS_VARIANTS = {
@@ -35,9 +36,22 @@ const PRIORITY_VARIANTS = {
   high: "destructive"
 }
 
+const CATEGORY_PRESETS = [
+  "Development",
+  "Design",
+  "QA / Testing",
+  "Bug Fix",
+  "Documentation",
+  "DevOps / Infra",
+  "Research",
+  "In-Office Work",
+  "Client Meeting",
+  "Admin / HR"
+]
+
 const EmployeeDashboard = () => {
   const { user } = useAuth()
-  const { activeSession, elapsedSeconds, isRunning, startTimer, pauseTimer, resumeTimer, stopTimer } = useTimer()
+  const { activeSession, elapsedSeconds, isRunning, isPending, startTimer, pauseTimer, resumeTimer, stopTimer } = useTimer()
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailTask, setDetailTask] = useState(null)
@@ -49,6 +63,7 @@ const EmployeeDashboard = () => {
     title: "", description: "", category: "General",
     priority: "medium", estimatedHours: 0, dueDate: ""
   })
+  const [customCategoryActive, setCustomCategoryActive] = useState(false)
   const [transitionComment, setTransitionComment] = useState("")
   const [newComment, setNewComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -91,6 +106,7 @@ const EmployeeDashboard = () => {
         title: "", description: "", category: "General",
         priority: "medium", estimatedHours: 0, dueDate: ""
       })
+      setCustomCategoryActive(false)
     } catch (err) {
       console.error("Error creating self-assigned task:", err)
     } finally {
@@ -219,7 +235,7 @@ const EmployeeDashboard = () => {
             Welcome back, <strong className="text-foreground">{user?.name}</strong>. Start timers on your assigned tasks, record log hours, and submit work reviews.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
+        <Button onClick={() => { setCreateOpen(true); setCustomCategoryActive(false); }} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
           <Plus className="h-4.5 w-4.5" /> Create Task
         </Button>
       </div>
@@ -408,42 +424,58 @@ const EmployeeDashboard = () => {
                           {isTaskActive ? (
                             <div className="flex items-center justify-center gap-1">
                               {isRunning ? (
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 rounded-lg text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10" 
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-lg text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 disabled:opacity-60"
                                   onClick={pauseTimer}
+                                  disabled={isPending}
+                                  title="Pause timer"
                                 >
-                                  <Pause className="h-4 w-4" />
+                                  {isPending
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <Pause className="h-4 w-4" />}
                                 </Button>
                               ) : (
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 rounded-lg text-green-500 hover:text-green-600 hover:bg-green-500/10" 
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-lg text-green-500 hover:text-green-600 hover:bg-green-500/10 disabled:opacity-60"
                                   onClick={resumeTimer}
+                                  disabled={isPending}
+                                  title="Resume timer"
                                 >
-                                  <Play className="h-4 w-4" />
+                                  {isPending
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <Play className="h-4 w-4" />}
                                 </Button>
                               )}
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10 disabled:opacity-60"
                                 onClick={stopTimer}
+                                disabled={isPending}
+                                title="Stop timer"
                               >
-                                <Square className="h-4 w-4" />
+                                {isPending
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <Square className="h-4 w-4" />}
                               </Button>
                             </div>
                           ) : (
                             !["Completed", "Approved"].includes(t.status) && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-60"
                                 onClick={e => handlePlayRow(e, t._id)}
+                                disabled={isPending}
+                                title="Start timer"
                               >
-                                <Play className="h-4 w-4" />
+                                {isPending
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : <Play className="h-4 w-4" />}
                               </Button>
                             )
                           )}
@@ -502,30 +534,74 @@ const EmployeeDashboard = () => {
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="task-cat" className="text-foreground/80 font-medium">Category</Label>
-                <Input
-                  id="task-cat"
-                  value={taskForm.category}
-                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="e.g. Design"
-                  className="h-10 rounded-lg"
-                />
+              <div className="space-y-1.5 flex flex-col">
+                <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
+                <Select
+                  value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
+                  onValueChange={val => {
+                    if (val === "custom") {
+                      setCustomCategoryActive(true);
+                      setTaskForm(f => ({ ...f, category: "" }));
+                    } else {
+                      setCustomCategoryActive(false);
+                      setTaskForm(f => ({ ...f, category: val }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORY_PRESETS.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                    <SelectItem value="custom">Custom...</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="task-priority" className="mb-1 text-foreground/80 font-medium">Priority</Label>
-                <select
-                  id="task-priority"
+                <Select
                   value={taskForm.priority}
-                  onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}
-                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onValueChange={val => setTaskForm(f => ({ ...f, priority: val }))}
                 >
-                  <option value="low" className="bg-card text-foreground">Low</option>
-                  <option value="medium" className="bg-card text-foreground">Medium</option>
-                  <option value="high" className="bg-card text-foreground">High</option>
-                </select>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Select Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Low
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="medium">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-500"></span> Medium
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="high">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-rose-500"></span> High
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            {customCategoryActive && (
+              <div className="space-y-1.5 animate-in fade-in duration-200">
+                <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
+                <Input
+                  id="task-cat-custom"
+                  value={taskForm.category}
+                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="Enter custom category..."
+                  className="h-10 rounded-lg"
+                  required
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
@@ -678,21 +754,21 @@ const EmployeeDashboard = () => {
                           {formatTime(elapsedSeconds)}
                         </span>
                         {isRunning ? (
-                          <Button size="sm" variant="outline" className="h-8 px-3 rounded-lg" onClick={pauseTimer}>
-                            <Pause className="h-3.5 w-3.5 mr-1" /> Pause
+                          <Button size="sm" variant="outline" className="h-8 px-3 rounded-lg disabled:opacity-60" onClick={pauseTimer} disabled={isPending}>
+                            {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Pause className="h-3.5 w-3.5 mr-1" />} Pause
                           </Button>
                         ) : (
-                          <Button size="sm" variant="outline" className="h-8 px-3 rounded-lg" onClick={resumeTimer}>
-                            <Play className="h-3.5 w-3.5 mr-1 text-primary" /> Resume
+                          <Button size="sm" variant="outline" className="h-8 px-3 rounded-lg disabled:opacity-60" onClick={resumeTimer} disabled={isPending}>
+                            {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1 text-primary" />} Resume
                           </Button>
                         )}
-                        <Button size="sm" variant="destructive" className="h-8 px-3 rounded-lg" onClick={stopTimer}>
-                          <Square className="h-3.5 w-3.5 mr-1" /> Stop
+                        <Button size="sm" variant="destructive" className="h-8 px-3 rounded-lg disabled:opacity-60" onClick={stopTimer} disabled={isPending}>
+                          {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Square className="h-3.5 w-3.5 mr-1" />} Stop
                         </Button>
                       </div>
                     ) : (
-                      <Button size="sm" className="rounded-lg shadow font-semibold" onClick={() => startTimer(detailTask._id)}>
-                        <Play className="h-3.5 w-3.5 mr-1.5" /> Start Timer
+                      <Button size="sm" className="rounded-lg shadow font-semibold disabled:opacity-60" onClick={() => startTimer(detailTask._id)} disabled={isPending}>
+                        {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1.5" />} Start Timer
                       </Button>
                     )}
                   </div>

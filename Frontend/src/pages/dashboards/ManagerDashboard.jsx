@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   ClipboardList, CheckCircle2, Clock, BarChart3,
   Plus, MessageSquare, Send, Calendar, User, UserCheck, FileText, AlertCircle, Check
@@ -34,6 +35,19 @@ const PRIORITY_VARIANTS = {
   high: "destructive"
 }
 
+const CATEGORY_PRESETS = [
+  "Development",
+  "Design",
+  "QA / Testing",
+  "Bug Fix",
+  "Documentation",
+  "DevOps / Infra",
+  "Research",
+  "In-Office Work",
+  "Client Meeting",
+  "Admin / HR"
+]
+
 const ManagerDashboard = () => {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
@@ -49,6 +63,7 @@ const ManagerDashboard = () => {
     department: "", assignedTo: "", priority: "medium",
     estimatedHours: 0, dueDate: ""
   })
+  const [customCategoryActive, setCustomCategoryActive] = useState(false)
   const [reviewComment, setReviewComment] = useState("")
   const [newComment, setNewComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
@@ -83,6 +98,7 @@ const ManagerDashboard = () => {
 
   const handleCreateTask = async (e) => {
     e.preventDefault()
+    if (!taskForm.assignedTo) return
     setSubmitting(true)
     try {
       await axios.post(`${API_BASE}/api/tasks`, taskForm)
@@ -93,6 +109,7 @@ const ManagerDashboard = () => {
         department: "", assignedTo: "", priority: "medium",
         estimatedHours: 0, dueDate: ""
       })
+      setCustomCategoryActive(false)
     } catch (err) {
       console.error("Error creating task:", err)
     } finally {
@@ -193,7 +210,7 @@ const ManagerDashboard = () => {
             Welcome back, <strong className="text-foreground">{user?.name}</strong>. Monitor team progress, assign tasks, and review submissions.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
+        <Button onClick={() => { setCreateOpen(true); setCustomCategoryActive(false); }} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
           <Plus className="h-4.5 w-4.5" /> Create Task
         </Button>
       </div>
@@ -432,59 +449,118 @@ const ManagerDashboard = () => {
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="task-cat" className="text-foreground/80 font-medium">Category</Label>
-                <Input
-                  id="task-cat"
-                  value={taskForm.category}
-                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="e.g. Development"
-                  className="h-10 rounded-lg"
-                />
+              <div className="space-y-1.5 flex flex-col">
+                <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
+                <Select
+                  value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
+                  onValueChange={val => {
+                    if (val === "custom") {
+                      setCustomCategoryActive(true);
+                      setTaskForm(f => ({ ...f, category: "" }));
+                    } else {
+                      setCustomCategoryActive(false);
+                      setTaskForm(f => ({ ...f, category: val }));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORY_PRESETS.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                    <SelectItem value="custom">Custom...</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="task-dept" className="mb-1 text-foreground/80 font-medium">Department</Label>
-                <select
-                  id="task-dept"
-                  value={taskForm.department}
-                  onChange={e => setTaskForm(f => ({ ...f, department: e.target.value }))}
-                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                <Select
+                  value={taskForm.department || "none"}
+                  onValueChange={val => setTaskForm(f => ({ ...f, department: val === "none" ? "" : val }))}
                 >
-                  <option value="" className="bg-card text-foreground">— None —</option>
-                  {departments.map(d => (
-                    <option key={d._id} value={d._id} className="bg-card text-foreground">{d.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="— None —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    {departments.map(d => (
+                      <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            {customCategoryActive && (
+              <div className="space-y-1.5 animate-in fade-in duration-200">
+                <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
+                <Input
+                  id="task-cat-custom"
+                  value={taskForm.category}
+                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
+                  placeholder="Enter custom category..."
+                  className="h-10 rounded-lg"
+                  required
+                />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="task-assignee" className="mb-1 text-foreground/80 font-medium">Assigned To *</Label>
-                <select
-                  id="task-assignee"
+                <Select
                   value={taskForm.assignedTo}
-                  onChange={e => setTaskForm(f => ({ ...f, assignedTo: e.target.value }))}
-                  required
-                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onValueChange={val => setTaskForm(f => ({ ...f, assignedTo: val }))}
                 >
-                  <option value="" className="bg-card text-foreground">— Select Assignee —</option>
-                  {employees.map(emp => (
-                    <option key={emp._id} value={emp._id} className="bg-card text-foreground">{emp.name}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="— Select Assignee —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map(emp => {
+                      const initials = emp.name ? emp.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "EM"
+                      return (
+                        <SelectItem key={emp._id} value={emp._id}>
+                          <span className="flex items-center gap-2">
+                            <span className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold flex items-center justify-center">
+                              {initials}
+                            </span>
+                            {emp.name}
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="task-priority" className="mb-1 text-foreground/80 font-medium">Priority</Label>
-                <select
-                  id="task-priority"
+                <Select
                   value={taskForm.priority}
-                  onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))}
-                  className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onValueChange={val => setTaskForm(f => ({ ...f, priority: val }))}
                 >
-                  <option value="low" className="bg-card text-foreground">Low</option>
-                  <option value="medium" className="bg-card text-foreground">Medium</option>
-                  <option value="high" className="bg-card text-foreground">High</option>
-                </select>
+                  <SelectTrigger className="h-10 rounded-lg">
+                    <SelectValue placeholder="Select Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Low
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="medium">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-500"></span> Medium
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="high">
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-rose-500"></span> High
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
