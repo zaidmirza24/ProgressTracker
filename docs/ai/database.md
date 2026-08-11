@@ -8,37 +8,76 @@ This document describes the database layer of the application.
 
 * **Database Engine**: MongoDB
 * **ODM (Object Document Mapper)**: Mongoose (v9.x)
-* **Status**: Installed and imported, but connection logic is not yet implemented.
+* **Status**: Connected successfully in `Backend/index.js` using the environment configuration.
 
 ---
 
-## Future Schema Guidelines
+## Active Database Models
 
-When creating new Mongoose models:
-1. Put models inside `Backend/models/`.
-2. Name model files using singular casing (e.g., `User.js`, `Progress.js`).
-3. Explicitly define validation rules on schema fields (e.g. `required`, `trim`, `minlength`).
-4. Enable timestamps option (`{ timestamps: true }`) for automated creation and update tracking.
+All models are placed in the [Backend/models/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models) directory.
 
-### Expected Future Models
-
-Here are the anticipated schemas for a progress tracker application:
-
-#### User Schema (Proposed)
-* **Model Name**: `User`
-* **Collection**: `users`
+### 1. User
+* **Model File**: [User.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/User.js)
 * **Fields**:
-  * `username` (String, required, unique, trimmed)
-  * `email` (String, required, unique, trimmed, lowercase)
-  * `password` (String, required, minlength)
-  * Timestamps (`createdAt`, `updatedAt`)
+  * `name` (String, required, trimmed)
+  * `email` (String, required, unique, lowercase, trimmed)
+  * `passwordHash` (String, required)
+  * `role` (String, enum: `["super_admin", "manager", "employee"]`, default: `"employee"`)
+  * `department` (ObjectId, ref: `"Department"`, default: `null`)
+  * `team` (ObjectId, ref: `"Team"`, default: `null`)
+  * `manager` (ObjectId, ref: `"User"`, default: `null`)
+  * `isActive` (Boolean, default: `true`)
 
-#### Progress/Task Schema (Proposed)
-* **Model Name**: `Progress`
-* **Collection**: `progresses`
+### 2. Department
+* **Model File**: [Department.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/Department.js)
 * **Fields**:
-  * `userId` (ObjectId, ref: `'User'`, required)
-  * `title` (String, required)
-  * `status` (String, enum: `['pending', 'in-progress', 'completed']`, default: `'pending'`)
-  * `score` / `percentage` (Number, default: 0)
-  * Timestamps (`createdAt`, `updatedAt`)
+  * `name` (String, required, trimmed)
+  * `description` (String, default: `""`, trimmed)
+  * `isActive` (Boolean, default: `true`)
+
+### 3. Team
+* **Model File**: [Team.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/Team.js)
+* **Fields**:
+  * `name` (String, required, trimmed)
+  * `department` (ObjectId, ref: `"Department"`, required)
+  * `description` (String, default: `""`, trimmed)
+  * `isActive` (Boolean, default: `true`)
+
+### 4. Task
+* **Model File**: [Task.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/Task.js)
+* **Fields**:
+  * `title` (String, required, trimmed)
+  * `description` (String, default: `""`, trimmed)
+  * `category` (String, default: `"General"`, trimmed)
+  * `department` (ObjectId, ref: `"Department"`, default: `null`)
+  * `assignedBy` (ObjectId, ref: `"User"`, required)
+  * `assignedTo` (ObjectId, ref: `"User"`, required)
+  * `priority` (String, enum: `["low", "medium", "high"]`, default: `"medium"`)
+  * `estimatedHours` (Number, default: `0`)
+  * `dueDate` (Date, default: `null`)
+  * `status` (String, enum: `["Not Started", "Accepted", "In Progress", "Waiting for Review", "Completed", "Approved", "Rejected", "Reopened"]`, default: `"Not Started"`)
+  * `progressPercentage` (Number, default: `0`)
+  * `comments` (Array of sub-schema: `text`, `author` ref: `"User"`, `createdAt`)
+  * `isActive` (Boolean, default: `true`)
+
+### 5. DailyWorkLog
+* **Model File**: [DailyWorkLog.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/DailyWorkLog.js)
+* **Fields**:
+  * `employee` (ObjectId, ref: `"User"`, required)
+  * `date` (Date, default: `Date.now`)
+  * `todaysWork` (String, required, trimmed)
+  * `hoursWorked` (Number, required)
+  * `tasksCompleted` (String, default: `""`, trimmed)
+  * `problemsFaced` (String, default: `""`, trimmed)
+  * `nextPlan` (String, default: `""`, trimmed)
+  * `remarks` (String, default: `""`, trimmed)
+
+### 6. WorkSession
+* **Model File**: [WorkSession.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models/WorkSession.js)
+* **Fields**:
+  * `task` (ObjectId, ref: `"Task"`, required)
+  * `employee` (ObjectId, ref: `"User"`, required)
+  * `startedAt` (Date, default: `Date.now`)
+  * `events` (Array of sub-schema: `type` enum: `["pause", "resume"]`, `timestamp`)
+  * `stoppedAt` (Date, default: `null`)
+  * `totalSeconds` (Number, default: `0`)

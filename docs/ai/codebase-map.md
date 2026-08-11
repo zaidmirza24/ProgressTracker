@@ -24,36 +24,39 @@ This document outlines the layout of the repository to help AI agents find and e
 
 ---
 
-## 2. Directory Layout for New Features
+---
 
-When creating new features (e.g., authentication, progress tracking, user statistics), future AI agents **MUST** organize files using the following structures:
+## 2. Directory Layout and Core Modules
 
-### Backend Structure Guide
-All new backend files should be placed under modular subdirectories in `Backend/`:
-```text
-Backend/
-├── controllers/      # Route logic / request handlers
-│   ├── authController.js
-│   └── progressController.js
-├── models/           # Mongoose schemas
-│   ├── User.js
-│   └── Progress.js
-├── routes/           # Express router endpoints
-│   ├── authRoutes.js
-│   └── progressRoutes.js
-├── middleware/       # Custom Express middlewares (e.g., auth, validation)
-│   └── authMiddleware.js
-└── index.js          # Core app bootstrap & routing register
-```
+The frontend and backend files are organized as follows:
 
-### Frontend Structure Guide
-All new frontend components and services should be placed under modular subdirectories in `Frontend/src/`:
-```text
-Frontend/src/
-├── components/       # Reusable UI components
-├── context/          # React contexts / global state managers
-├── hooks/            # Custom React hooks (e.g., useAuth)
-├── services/         # API fetch/axios wrappers (e.g., apiService.js)
-├── main.jsx          # Entry point
-└── App.jsx           # Main layout/routing container
-```
+### Backend Structure
+All backend modules are located in the [Backend/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend) directory:
+* **[controllers/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/controllers)**: Requests handlers containing core business logic.
+  * `authController.js`, `dailyWorkLogController.js`, `departmentController.js`, `taskController.js`, `teamController.js`, `userController.js`, `workSessionController.js`
+* **[models/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/models)**: Mongoose schemas representing the data layer.
+  * `User.js`, `Department.js`, `Team.js`, `Task.js`, `DailyWorkLog.js`, `WorkSession.js`
+* **[routes/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/routes)**: Express routing endpoints.
+  * `auth.js`, `dailyWorkLogRoutes.js`, `departmentRoutes.js`, `taskRoutes.js`, `teamRoutes.js`, `userRoutes.js`, `workSessionRoutes.js`
+* **[middleware/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/middleware)**: Custom middlewares.
+  * `authMiddleware.js` (JWT parsing/protection), `errorMiddleware.js` (global uncaught handlers)
+* **[utils/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/utils)**: Global utilities.
+  * `appError.js` (operational error helper)
+* **[seed.js](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Backend/seed.js)**: Database seeding script for client demo data.
+
+### Frontend Structure
+All frontend files are located in the [Frontend/src/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src) directory:
+* **[components/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/components)**: Core and reusable UI components.
+  * `Layout.jsx` (main navigation/dashboard shell)
+  * `ProtectedRoute.jsx` (role & authentication check wrapper)
+  * **[ui/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/components/ui)**: Modular Radix-based UI components (button, card, dialog, select, skeleton, table, tabs, etc.)
+* **[context/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/context)**: React Context providers.
+  * `AuthContext.jsx` (login, token retention, current user state)
+  * `ThemeContext.jsx` (CSS variables-based style themes)
+  * `TimerContext.jsx` (global tracking timer events)
+* **[pages/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/pages)**: Primary view containers.
+  * `Login.jsx` (email/password login panel)
+  * `WorkLogs.jsx` (daily log entry and review dashboard)
+  * **[dashboards/](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/pages/dashboards)**: User-role based entry pages:
+    * `SuperAdminDashboard.jsx`, `ManagerDashboard.jsx`, `EmployeeDashboard.jsx`, `Unauthorized.jsx`
+* **[index.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/index.css)**: Primary CSS rules, color tokens (Fordark theme), skeleton-shimmer keyframes, and utilities.
