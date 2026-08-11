@@ -32,8 +32,8 @@ MongoDB Database (Storage)
 ### 1. Frontend Architecture
 * **Technology**: React 19 scaffolded with Vite.
 * **Entry Point**: [main.jsx](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/main.jsx) mounts the `<App />` component inside `#root` in `index.html`.
-* **State Management**: Local React state (`useState`) is used; no global state management (e.g., Redux, Zustand) or React Router is introduced yet.
-* **Styling**: Vanilla CSS is used exclusively. Primary styles are in [App.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/App.css) and [index.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/index.css).
+* **State Management**: React Router (`react-router-dom`) handles routing, and custom React Context providers (`AuthContext`, `ThemeContext`, `TimerContext`) handle global application state.
+* **Styling**: Tailwind CSS v4 is used for UI layouts and modern utility styling, along with custom CSS custom properties and styles in [App.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/App.css) and [index.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/index.css).
 
 ### 2. Backend Architecture
 * **Technology**: Node.js with Express.

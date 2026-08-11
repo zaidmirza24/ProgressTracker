@@ -12,9 +12,9 @@ This document logs key architectural decisions made for the ProgressTracker repo
 * **Decision**: Use ES Modules (`import`/`export`) in the Node.js Express backend via `"type": "module"` in `package.json`.
 * **Rationale**: Aligns backend JavaScript syntax with modern frontend React standards, making coding patterns consistent across the whole repository.
 
-## 3. Styling via Vanilla CSS
-* **Decision**: Retain Vanilla CSS stylesheet files (`index.css`, `App.css`) for the UI presentation.
-* **Rationale**: Keeps the application payload lightweight and flexible without introducing utility styles (Tailwind) or CSS-in-JS compilation overhead unless explicitly requested.
+## 3. Styling via Tailwind CSS & Vanilla CSS
+* **Decision**: Combine Tailwind CSS v4 utility classes with standard Vanilla CSS declarations inside (`index.css`, `App.css`).
+* **Rationale**: Tailwind CSS v4 provides rapid utility-first UI development and standardizes responsive layouts, while Vanilla CSS manages global theme variables (e.g., dark theme oklch tokens), custom keyframe animations (floating glows, pulse rings), and custom element scrollbars.
 
 ## 4. Choice of Tech Stack
 * **Decision**: Adopt the standard MERN stack with Express and Mongoose.

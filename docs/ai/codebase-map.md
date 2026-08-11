@@ -20,7 +20,7 @@ This document outlines the layout of the repository to help AI agents find and e
 * **Main App Page**: [App.jsx](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/App.jsx)
   * Responsibilities: Home page structure, counter state, and links.
 * **Global Styling**: [index.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/index.css) & [App.css](file:///c:/Users/mirza/OneDrive/Desktop/Projects/ProgressTracker/Frontend/src/App.css)
-  * Responsibilities: Pure CSS rules for the app.
+  * Responsibilities: Tailwind CSS imports, custom theme color tokens (Fordark theme), custom animations (floating glows, shimmer, pulse), and custom scrollbars/base overlays.
 
 ---
 
