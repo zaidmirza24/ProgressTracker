@@ -7,6 +7,7 @@ import departmentRoutes from "./routes/departmentRoutes.js"
 import teamRoutes from "./routes/teamRoutes.js"
 import userRoutes from "./routes/userRoutes.js"
 import taskRoutes from "./routes/taskRoutes.js"
+import taskTemplateRoutes from "./routes/taskTemplateRoutes.js"
 import workSessionRoutes from "./routes/workSessionRoutes.js"
 import dailyWorkLogRoutes from "./routes/dailyWorkLogRoutes.js"
 import globalErrorHandler from "./middleware/errorMiddleware.js"
@@ -52,6 +53,7 @@ app.use("/api/departments", departmentRoutes)
 app.use("/api/teams", teamRoutes)
 app.use("/api/users", userRoutes)
 app.use("/api/tasks", taskRoutes)
+app.use("/api/task-templates", taskTemplateRoutes)
 app.use("/api/work-sessions", workSessionRoutes)
 app.use("/api/daily-work-logs", dailyWorkLogRoutes)
 

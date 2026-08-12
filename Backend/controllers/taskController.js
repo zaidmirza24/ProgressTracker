@@ -1,10 +1,14 @@
 import Task from "../models/Task.js"
 import User from "../models/User.js"
 import WorkSession from "../models/WorkSession.js"
+import TaskTemplate from "../models/TaskTemplate.js"
+import { isValidTransition } from "../config/workflow.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
 
-// Helper to calculate elapsed seconds for a single work session
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Calculate elapsed seconds for a single in-progress work session
 const calculateSessionSeconds = (session) => {
   if (!session) return 0
   const events = session.events
@@ -15,29 +19,51 @@ const calculateSessionSeconds = (session) => {
   const lastEvent = events[events.length - 1]
   if (lastEvent.type === "pause") {
     return Math.floor(session.totalSeconds)
-  } else {
-    const elapsed = session.totalSeconds + (Date.now() - new Date(lastEvent.timestamp).getTime()) / 1000
-    return Math.max(0, Math.floor(elapsed))
   }
+  const elapsed = session.totalSeconds + (Date.now() - new Date(lastEvent.timestamp).getTime()) / 1000
+  return Math.max(0, Math.floor(elapsed))
 }
 
-// Helper to attach total tracked seconds to a task object
+// PERFORMANCE FIX: Batch-aggregate tracked seconds for multiple tasks in one DB query
+const attachTrackedSecondsToTasks = async (taskObjects) => {
+  const taskIds = taskObjects.map(t => t._id)
+
+  // Sum completed sessions per task
+  const sessionAgg = await WorkSession.aggregate([
+    { $match: { task: { $in: taskIds }, stoppedAt: { $ne: null } } },
+    { $group: { _id: "$task", totalStopped: { $sum: "$totalSeconds" } } }
+  ])
+
+  // Find active (unstoppped) sessions
+  const activeSessions = await WorkSession.find({ task: { $in: taskIds }, stoppedAt: null })
+
+  // Build lookup maps
+  const stoppedMap = {}
+  sessionAgg.forEach(s => { stoppedMap[s._id.toString()] = s.totalStopped })
+
+  const activeMap = {}
+  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionSeconds(s) })
+
+  return taskObjects.map(t => {
+    const id = t._id.toString()
+    const totalTrackedSeconds = (stoppedMap[id] || 0) + (activeMap[id] || 0)
+    return { ...t, totalTrackedSeconds }
+  })
+}
+
+// Attach tracked time to a single task (still needed for status update / add comment responses)
 const getTaskWithTime = async (task) => {
   const sessions = await WorkSession.find({ task: task._id })
   let totalTrackedSeconds = 0
   for (const s of sessions) {
-    if (s.stoppedAt) {
-      totalTrackedSeconds += s.totalSeconds
-    } else {
-      totalTrackedSeconds += calculateSessionSeconds(s)
-    }
+    totalTrackedSeconds += s.stoppedAt ? s.totalSeconds : calculateSessionSeconds(s)
   }
-  const tObj = task.toObject()
+  const tObj = task.toObject ? task.toObject() : task
   tObj.totalTrackedSeconds = totalTrackedSeconds
   return tObj
 }
 
-// Get progress defaults based on status
+// Map status → default progress %
 const getProgressForStatus = (status) => {
   switch (status) {
     case "Not Started": return 0
@@ -52,20 +78,19 @@ const getProgressForStatus = (status) => {
   }
 }
 
+// ─── GET /api/tasks ───────────────────────────────────────────────────────────
 export const getTasks = asyncHandler(async (req, res) => {
   let filter = { isActive: true }
 
   if (req.user.role === "manager") {
-    // Managers see tasks they assigned, or tasks assigned to employees reporting to them
     const subordinates = await User.find({ manager: req.user.id, isActive: true }).select("_id")
-    const subordinateIds = subordinates.map(sub => sub._id)
+    const subordinateIds = subordinates.map(s => s._id)
     filter.$or = [
       { assignedBy: req.user.id },
       { assignedTo: req.user.id },
       { assignedTo: { $in: subordinateIds } }
     ]
   } else if (req.user.role === "employee") {
-    // Employees see tasks assigned to them
     filter.assignedTo = req.user.id
   }
 
@@ -74,15 +99,16 @@ export const getTasks = asyncHandler(async (req, res) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
     .populate("comments.author", "name email role")
-    .sort({ updatedAt: -1 })
+    .populate("history.changedBy", "name email role")
+    .sort({ isDaily: -1, updatedAt: -1 }) // Daily tasks appear first
 
-  const tasksWithTime = await Promise.all(tasks.map(async (t) => {
-    return await getTaskWithTime(t)
-  }))
+  const taskPlainObjects = tasks.map(t => t.toObject())
+  const tasksWithTime = await attachTrackedSecondsToTasks(taskPlainObjects)
 
   res.json({ tasks: tasksWithTime })
 })
 
+// ─── POST /api/tasks ──────────────────────────────────────────────────────────
 export const createTask = asyncHandler(async (req, res, next) => {
   const { title, description, category, department, assignedTo, priority, estimatedHours, dueDate } = req.body
 
@@ -111,9 +137,10 @@ export const createTask = asyncHandler(async (req, res, next) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
 
-  res.status(201).json({ task: populatedTask })
+  res.status(201).json({ task: { ...populatedTask.toObject(), totalTrackedSeconds: 0 } })
 })
 
+// ─── PUT /api/tasks/:id/status ────────────────────────────────────────────────
 export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   const { status, comment } = req.body
   const { id } = req.params
@@ -123,9 +150,17 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     return next(new AppError("Task not found", 404))
   }
 
+  const isSelfAssigned = task.assignedBy.toString() === task.assignedTo.toString()
+  const oldStatus = task.status
+
+  // Validate transition using the centralized state machine config
+  if (!isValidTransition(req.user.role, isSelfAssigned, oldStatus, status)) {
+    return next(new AppError(`Forbidden status transition from '${oldStatus}' to '${status}' for role '${req.user.role}'`, 400))
+  }
+
   let finalStatus = status
-  // If the task is self-assigned, and it is transitioned to Waiting for Review, direct complete to Completed
-  if (task.assignedBy.toString() === task.assignedTo.toString() && status === "Waiting for Review") {
+  // Self-assigned tasks: Waiting for Review → Completed directly
+  if (isSelfAssigned && status === "Waiting for Review") {
     finalStatus = "Completed"
   }
 
@@ -133,12 +168,46 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   task.status = finalStatus
   task.progressPercentage = getProgressForStatus(finalStatus)
 
-  // Append optional transition comment
-  if (comment && comment.trim()) {
-    task.comments.push({
-      text: comment.trim(),
-      author: req.user.id
+  // Append transition to history audit trail
+  task.history.push({
+    fromStatus: oldStatus,
+    toStatus: finalStatus,
+    changedBy: req.user.id,
+    comment: comment?.trim() || "Status changed."
+  })
+
+  // Handle active timer side-effects:
+  if (finalStatus === "In Progress" && oldStatus !== "In Progress") {
+    // 1. Stop any currently active timer for this employee first to prevent collision
+    const activeSession = await WorkSession.findOne({
+      employee: req.user.id,
+      stoppedAt: null
     })
+    if (activeSession) {
+      const elapsed = (Date.now() - new Date(activeSession.startedAt).getTime()) / 1000
+      activeSession.totalSeconds = Math.max(0, Math.floor(elapsed))
+      activeSession.stoppedAt = new Date()
+      await activeSession.save()
+    }
+    // 2. Start a new session for this task
+    await WorkSession.create({
+      task: task._id,
+      employee: req.user.id,
+      startedAt: new Date()
+    })
+  } else if (oldStatus === "In Progress" && finalStatus !== "In Progress") {
+    // If moving OUT of In Progress, stop the session for this task
+    const currentSession = await WorkSession.findOne({
+      task: task._id,
+      employee: req.user.id,
+      stoppedAt: null
+    })
+    if (currentSession) {
+      const elapsed = (Date.now() - new Date(currentSession.startedAt).getTime()) / 1000
+      currentSession.totalSeconds = Math.max(0, Math.floor(elapsed))
+      currentSession.stoppedAt = new Date()
+      await currentSession.save()
+    }
   }
 
   await task.save()
@@ -148,11 +217,13 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
     .populate("comments.author", "name email role")
+    .populate("history.changedBy", "name email role")
 
   const taskWithTime = await getTaskWithTime(populatedTask)
   res.json({ task: taskWithTime })
 })
 
+// ─── POST /api/tasks/:id/comments ────────────────────────────────────────────
 export const addComment = asyncHandler(async (req, res, next) => {
   const { text } = req.body
   const { id } = req.params
@@ -166,11 +237,7 @@ export const addComment = asyncHandler(async (req, res, next) => {
     return next(new AppError("Task not found", 404))
   }
 
-  task.comments.push({
-    text: text.trim(),
-    author: req.user.id
-  })
-
+  task.comments.push({ text: text.trim(), author: req.user.id })
   await task.save()
 
   const populatedTask = await Task.findById(id)
@@ -178,7 +245,294 @@ export const addComment = asyncHandler(async (req, res, next) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
     .populate("comments.author", "name email role")
+    .populate("history.changedBy", "name email role")
 
   const taskWithTime = await getTaskWithTime(populatedTask)
   res.json({ task: taskWithTime })
+})
+
+// ─── GET /api/tasks/daily — Ensure today's daily tasks exist for employee ────
+export const ensureDailyTasks = asyncHandler(async (req, res) => {
+  const employee = req.user
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000)
+
+  // Fetch applicable templates (global + department-matched)
+  const user = await User.findById(employee.id)
+  const templateFilter = {
+    isActive: true,
+    $or: [
+      { scope: "global" },
+      { scope: "department", departments: user.department }
+    ]
+  }
+  const templates = await TaskTemplate.find(templateFilter)
+
+  // For each template, check if today's task already exists
+  for (const tpl of templates) {
+    const exists = await Task.findOne({
+      assignedTo: employee.id,
+      templateRef: tpl._id,
+      dailyDate: { $gte: startOfToday, $lt: endOfToday }
+    })
+    if (!exists) {
+      await Task.create({
+        title: tpl.title,
+        description: tpl.description,
+        category: tpl.category,
+        priority: tpl.priority,
+        estimatedHours: tpl.estimatedHours,
+        assignedBy: employee.id, // self-assigned daily
+        assignedTo: employee.id,
+        department: user.department || null,
+        status: "Not Started",
+        progressPercentage: 0,
+        isDaily: true,
+        templateRef: tpl._id,
+        dailyDate: startOfToday
+      })
+    }
+  }
+
+  // Carry forward uncompleted daily tasks from previous days (pending carry-over)
+  const incompletePastDailyTasks = await Task.find({
+    assignedTo: employee.id,
+    isDaily: true,
+    isActive: true,
+    dailyDate: { $lt: startOfToday },
+    status: { $nin: ["Completed", "Approved"] }
+  })
+
+  // Mark them with a carry-forward flag by updating dailyDate to today if not already updated today
+  for (const t of incompletePastDailyTasks) {
+    // Avoid duplicates: check if a carry-forward for this template already exists today
+    if (t.templateRef) {
+      const alreadyCarried = await Task.findOne({
+        assignedTo: employee.id,
+        templateRef: t.templateRef,
+        dailyDate: { $gte: startOfToday, $lt: endOfToday }
+      })
+      if (!alreadyCarried) {
+        // Re-stamp to today so it surfaces in today's view
+        t.dailyDate = startOfToday
+        t.isCarryForward = true
+        await t.save()
+      }
+    }
+  }
+
+  res.json({ success: true, message: "Daily tasks provisioned" })
+})
+
+// ─── GET /api/tasks/report — Admin progress report ───────────────────────────
+export const getProgressReport = asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query
+
+  // ── 1. Build Task Query with Date Filters ──────────────────────────────────
+  const query = { isActive: true }
+  if (startDate && endDate) {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    // If only YYYY-MM-DD is passed, make sure end covers the entire day
+    if (endDate.length <= 10) {
+      end.setHours(23, 59, 59, 999)
+    }
+    query.$or = [
+      { createdAt: { $gte: start, $lte: end } },
+      { dailyDate: { $gte: start, $lte: end } }
+    ]
+  }
+
+  const tasks = await Task.find(query)
+    .populate("assignedTo", "name email department team")
+    .populate("assignedBy", "name email")
+    .populate("department", "name")
+    .lean()
+
+  const taskIds = tasks.map(t => t._id)
+
+  // ── 2. Batch-aggregate tracked seconds for all tasks ──────────────────────
+  const matchSession = { task: { $in: taskIds }, stoppedAt: { $ne: null } }
+  const activeSessionFilter = { task: { $in: taskIds }, stoppedAt: null }
+
+  if (startDate && endDate) {
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    if (endDate.length <= 10) {
+      end.setHours(23, 59, 59, 999)
+    }
+    matchSession.startedAt = { $gte: start, $lte: end }
+    activeSessionFilter.startedAt = { $gte: start, $lte: end }
+  }
+
+  const sessionAgg = await WorkSession.aggregate([
+    { $match: matchSession },
+    { $group: { _id: "$task", totalStopped: { $sum: "$totalSeconds" } } }
+  ])
+  const activeSessions = await WorkSession.find(activeSessionFilter)
+
+  const stoppedMap = {}
+  sessionAgg.forEach(s => { stoppedMap[s._id.toString()] = s.totalStopped })
+  const activeMap = {}
+  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionSeconds(s) })
+
+  const trackedMap = {}
+  taskIds.forEach(id => {
+    const sid = id.toString()
+    trackedMap[sid] = (stoppedMap[sid] || 0) + (activeMap[sid] || 0)
+  })
+
+  // ── 3. Fetch all active users ──────────────────────────────────────────────
+  const users = await User.find({ isActive: true, role: "employee" })
+    .populate("department", "name")
+    .populate("team", "name")
+    .lean()
+
+  // ── 4. Employee-wise report ───────────────────────────────────────────────
+  const employeeReport = users.map(u => {
+    const uTasks = tasks.filter(t => t.assignedTo && t.assignedTo._id.toString() === u._id.toString())
+    const total = uTasks.length
+    const completed = uTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const inProgress = uTasks.filter(t => t.status === "In Progress").length
+    const rejected = uTasks.filter(t => t.status === "Rejected").length
+    const overdue = uTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const totalTrackedSeconds = uTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
+    const avgProgress = total > 0 ? Math.round(uTasks.reduce((acc, t) => acc + t.progressPercentage, 0) / total) : 0
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+
+    // Detailed employee tasks list for drilldown
+    const employeeTasks = uTasks.map(t => ({
+      _id: t._id,
+      title: t.title,
+      description: t.description || "",
+      category: t.category || "General",
+      priority: t.priority,
+      status: t.status,
+      progressPercentage: t.progressPercentage,
+      estimatedHours: t.estimatedHours || 0,
+      totalTrackedSeconds: trackedMap[t._id.toString()] || 0,
+      dueDate: t.dueDate,
+      createdAt: t.createdAt
+    }))
+
+    // Calculate Avg. Resolution Velocity in Days
+    const completedTasks = uTasks.filter(t => ["Completed", "Approved"].includes(t.status))
+    let totalResolutionTimeMs = 0
+    completedTasks.forEach(t => {
+      const completionHistory = t.history?.find(h => ["Completed", "Approved"].includes(h.toStatus))
+      const completionTime = completionHistory ? new Date(completionHistory.timestamp) : new Date(t.updatedAt)
+      const duration = completionTime.getTime() - new Date(t.createdAt).getTime()
+      totalResolutionTimeMs += Math.max(0, duration)
+    })
+    const avgResolutionDays = completedTasks.length > 0
+      ? parseFloat(((totalResolutionTimeMs / (1000 * 60 * 60 * 24)) / completedTasks.length).toFixed(1))
+      : 0
+
+    // Calculate Estimation Accuracy (Tracked vs Estimated)
+    const completedWithEstimation = completedTasks.filter(t => t.estimatedHours > 0)
+    let totalEstimatedHours = 0
+    let totalTrackedHoursForEst = 0
+    completedWithEstimation.forEach(t => {
+      totalEstimatedHours += t.estimatedHours
+      totalTrackedHoursForEst += (trackedMap[t._id.toString()] || 0) / 3600
+    })
+    const estimationAccuracy = totalEstimatedHours > 0
+      ? Math.round((totalEstimatedHours / Math.max(0.1, totalTrackedHoursForEst)) * 100)
+      : 100 // default to 100 if no estimates configured
+
+    return {
+      _id: u._id,
+      name: u.name,
+      email: u.email,
+      department: u.department?.name || "—",
+      team: u.team?.name || "—",
+      total,
+      completed,
+      inProgress,
+      rejected,
+      overdue,
+      totalTrackedSeconds,
+      avgProgress,
+      completionRate,
+      tasks: employeeTasks,
+      avgResolutionDays,
+      estimationAccuracy
+    }
+  })
+
+  // ── 5. Department-wise report ─────────────────────────────────────────────
+  const deptMap = {}
+  tasks.forEach(t => {
+    const deptId = t.department?._id?.toString() || "unassigned"
+    const deptName = t.department?.name || "Unassigned"
+    if (!deptMap[deptId]) deptMap[deptId] = { deptId, deptName, tasks: [] }
+    deptMap[deptId].tasks.push(t)
+  })
+
+  const departmentReport = Object.values(deptMap).map(d => {
+    const total = d.tasks.length
+    const completed = d.tasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const inProgress = d.tasks.filter(t => t.status === "In Progress").length
+    const overdue = d.tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const totalTrackedSeconds = d.tasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+    const memberSet = new Set(d.tasks.map(t => t.assignedTo?._id?.toString()).filter(Boolean))
+    return { deptId: d.deptId, name: d.deptName, total, completed, inProgress, overdue, totalTrackedSeconds, completionRate, memberCount: memberSet.size }
+  })
+
+  // ── 6. Team-wise report ───────────────────────────────────────────────────
+  const teamUserMap = {}
+  users.forEach(u => {
+    const teamId = u.team?._id?.toString() || "unassigned"
+    const teamName = u.team?.name || "No Team"
+    if (!teamUserMap[teamId]) teamUserMap[teamId] = { teamId, teamName, memberIds: [] }
+    teamUserMap[teamId].memberIds.push(u._id.toString())
+  })
+
+  const teamReport = Object.values(teamUserMap).map(team => {
+    const tTasks = tasks.filter(t => t.assignedTo && team.memberIds.includes(t.assignedTo._id.toString()))
+    const total = tTasks.length
+    const completed = tTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const inProgress = tTasks.filter(t => t.status === "In Progress").length
+    const overdue = tTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const totalTrackedSeconds = tTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+    return { teamId: team.teamId, name: team.teamName, total, completed, inProgress, overdue, totalTrackedSeconds, completionRate, memberCount: team.memberIds.length }
+  })
+
+  // ── 7. Task health report ─────────────────────────────────────────────────
+  const allTasks = tasks
+  const healthReport = {
+    totalTasks: allTasks.length,
+    completedTasks: allTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length,
+    inProgressTasks: allTasks.filter(t => t.status === "In Progress").length,
+    notStartedTasks: allTasks.filter(t => t.status === "Not Started").length,
+    overdueTasks: allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length,
+    rejectedTasks: allTasks.filter(t => t.status === "Rejected").length,
+    waitingReviewTasks: allTasks.filter(t => t.status === "Waiting for Review").length,
+    totalTrackedSeconds: Object.values(trackedMap).reduce((a, b) => a + b, 0),
+    avgCompletionRate: allTasks.length > 0
+      ? Math.round(allTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length / allTasks.length * 100)
+      : 0
+  }
+
+  // ── 8. Priority breakdown ─────────────────────────────────────────────────
+  const priorityReport = ["high", "medium", "low"].map(p => {
+    const pTasks = allTasks.filter(t => t.priority === p)
+    return {
+      priority: p,
+      total: pTasks.length,
+      completed: pTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length,
+      overdue: pTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    }
+  })
+
+  res.json({
+    employeeReport,
+    departmentReport,
+    teamReport,
+    healthReport,
+    priorityReport
+  })
 })

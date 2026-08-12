@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -49,6 +50,11 @@ const CATEGORY_PRESETS = [
   "Admin / HR"
 ]
 
+const getLocalDateString = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
 const ManagerDashboard = () => {
   const { user } = useAuth()
   const [tasks, setTasks] = useState([])
@@ -62,7 +68,7 @@ const ManagerDashboard = () => {
   const [taskForm, setTaskForm] = useState({
     title: "", description: "", category: "General",
     department: "", assignedTo: "", priority: "medium",
-    estimatedHours: 0, dueDate: ""
+    estimatedHours: 0, dueDate: getLocalDateString()
   })
   const [customCategoryActive, setCustomCategoryActive] = useState(false)
   const [reviewComment, setReviewComment] = useState("")
@@ -70,6 +76,53 @@ const ManagerDashboard = () => {
   const [submitting, setSubmitting] = useState(false)
   const [workLogs, setWorkLogs] = useState([])
   const [logFilterEmployee, setLogFilterEmployee] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch = searchQuery
+      ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         t.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         t.priority?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         t.assignedTo?.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+      : true
+    return matchesSearch
+  })
+  const [inlineRejectId, setInlineRejectId] = useState(null)
+  const [inlineRejectComment, setInlineRejectComment] = useState("")
+  const [showAdvancedTaskForm, setShowAdvancedTaskForm] = useState(false)
+
+  const handleInlineApprove = async (taskId) => {
+    setSubmitting(true)
+    try {
+      await axios.put(`${API_BASE}/api/tasks/${taskId}/status`, {
+        status: "Approved",
+        comment: "Approved by manager."
+      })
+      await loadData()
+    } catch (err) {
+      console.error("Error approving task:", err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleInlineReject = async (taskId) => {
+    if (!inlineRejectComment.trim()) return
+    setSubmitting(true)
+    try {
+      await axios.put(`${API_BASE}/api/tasks/${taskId}/status`, {
+        status: "Rejected",
+        comment: inlineRejectComment
+      })
+      setInlineRejectId(null)
+      setInlineRejectComment("")
+      await loadData()
+    } catch (err) {
+      console.error("Error rejecting task:", err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -80,7 +133,8 @@ const ManagerDashboard = () => {
       ])
       setTasks(tRes.data.tasks)
       // Filter employees that report to this manager
-      const subordinates = uRes.data.users.filter(u => u.manager?._id === user.id || u.role === "employee")
+      const managerId = user?.id || user?._id
+      const subordinates = uRes.data.users.filter(u => u.manager?._id === managerId)
       setEmployees(subordinates)
       setDepartments(dRes.data.departments)
       // Load today's work logs
@@ -108,7 +162,7 @@ const ManagerDashboard = () => {
       setTaskForm({
         title: "", description: "", category: "General",
         department: "", assignedTo: "", priority: "medium",
-        estimatedHours: 0, dueDate: ""
+        estimatedHours: 0, dueDate: getLocalDateString()
       })
       setCustomCategoryActive(false)
     } catch (err) {
@@ -116,6 +170,16 @@ const ManagerDashboard = () => {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const openCreateForEmployee = (employeeId) => {
+    setTaskForm({
+      title: "", description: "", category: "General",
+      department: "", assignedTo: employeeId, priority: "medium",
+      estimatedHours: 0, dueDate: getLocalDateString()
+    })
+    setCustomCategoryActive(false)
+    setCreateOpen(true)
   }
 
   const handleReview = async (status, feedbackOverride = "") => {
@@ -318,16 +382,210 @@ const ManagerDashboard = () => {
         </Card>
       </div>
 
+      {/* Pending Review Queue */}
+      {(() => {
+        const reviewTasks = tasks.filter(t => t.status === "Waiting for Review")
+        if (reviewTasks.length === 0) return null
+
+        return (
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-warning" />
+              Pending Review Queue ({reviewTasks.length})
+            </h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {reviewTasks.map(t => {
+                const authorInitials = t.assignedTo?.name ? t.assignedTo.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "EM"
+                const lastComment = t.comments && t.comments.length > 0 ? t.comments[t.comments.length - 1].text : "No notes provided."
+                return (
+                  <Card key={t._id} className="border-warning/30 bg-card/45 backdrop-blur-sm shadow-md overflow-hidden relative border-l-4 border-l-warning">
+                    <CardHeader className="pb-2 flex flex-row items-start justify-between gap-4">
+                      <div>
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">{t.category}</span>
+                        <CardTitle className="text-sm font-bold text-foreground mt-0.5 leading-snug">{t.title}</CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+                          <User className="h-3 w-3" /> Submitted by <strong className="text-foreground">{t.assignedTo?.name}</strong>
+                        </p>
+                      </div>
+                      {t.totalTrackedSeconds > 0 && (
+                        <Badge variant="outline" className="font-mono text-[10px] shrink-0 border-violet-500/20 text-violet-400">
+                          {formatTrackedTime(t.totalTrackedSeconds)} tracked
+                        </Badge>
+                      )}
+                    </CardHeader>
+                    <CardContent className="pb-3 space-y-3">
+                      <div className="bg-muted/30 p-2.5 rounded-lg border border-border/20 text-xs text-muted-foreground italic">
+                        "{lastComment}"
+                      </div>
+                      
+                      {inlineRejectId === t._id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            placeholder="Please specify why this task is rejected..."
+                            value={inlineRejectComment}
+                            onChange={e => setInlineRejectComment(e.target.value)}
+                            className="w-full text-xs p-2 rounded-lg border border-border bg-card text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            rows={2}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="ghost" className="h-7 text-xs rounded-md" onClick={() => { setInlineRejectId(null); setInlineRejectComment(""); }}>
+                              Cancel
+                            </Button>
+                            <Button size="sm" variant="destructive" className="h-7 text-xs rounded-md font-semibold" onClick={() => handleInlineReject(t._id)} disabled={submitting || !inlineRejectComment.trim()}>
+                              Send Rejection
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="ghost" className="h-8 text-xs rounded-lg text-muted-foreground hover:text-foreground" onClick={() => setDetailTask(t)}>
+                            View Details
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-xs rounded-lg border-destructive/20 text-destructive hover:bg-destructive/10" onClick={() => { setInlineRejectId(t._id); setInlineRejectComment(""); }}>
+                            Reject
+                          </Button>
+                          <Button size="sm" className="h-8 text-xs rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold shadow-sm" onClick={() => handleInlineApprove(t._id)} disabled={submitting}>
+                            Approve
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Employee-wise Workload Tracker */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              <User className="h-5 w-5 text-primary" />
+              Team Workload & Pending Tasks
+            </h3>
+            <p className="text-sm text-muted-foreground">Monitor pending tasks and allocate new work employee-wise</p>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {employees.filter(emp => emp.role === "employee").map(emp => {
+            // Get pending tasks for this employee
+            const empTasks = tasks.filter(t => t.assignedTo?._id === emp._id && !["Approved", "Completed"].includes(t.status))
+            const inProgress = empTasks.filter(t => t.status === "In Progress").length
+            const waitingReview = empTasks.filter(t => t.status === "Waiting for Review").length
+            const accepted = empTasks.filter(t => t.status === "Accepted").length
+            const notStarted = empTasks.filter(t => t.status === "Not Started" || t.status === "Reopened" || t.status === "Rejected").length
+
+            const initials = emp.name ? emp.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "EM"
+
+            return (
+              <Card key={emp._id} className="border-border/40 bg-card/45 backdrop-blur-sm shadow-lg overflow-hidden flex flex-col justify-between group hover:border-primary/20 transition-all duration-200">
+                <CardHeader className="pb-3 border-b border-border/40 flex flex-row items-center justify-between space-y-0 gap-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold flex items-center justify-center shadow-inner">
+                      {initials}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-sm text-foreground/90 leading-tight">{emp.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">{emp.team?.name || "Employee"}</span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    onClick={() => openCreateForEmployee(emp._id)}
+                    title={`Assign task to ${emp.name}`}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-4 flex-1 flex flex-col justify-between space-y-4">
+                  {/* Status Metrics Strip */}
+                  <div className="grid grid-cols-4 gap-2 text-center bg-muted/20 p-2 rounded-xl border border-border/30 text-xs">
+                    <div>
+                      <div className="font-bold text-foreground">{empTasks.length}</div>
+                      <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Total</div>
+                    </div>
+                    <div>
+                      <div className="font-bold text-violet-400">{inProgress}</div>
+                      <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Active</div>
+                    </div>
+                    <div>
+                      <div className="font-bold text-warning-foreground">{waitingReview}</div>
+                      <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Review</div>
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-400">{notStarted + accepted}</div>
+                      <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Pending</div>
+                    </div>
+                  </div>
+
+                  {/* Tasks List */}
+                  <div className="flex-1 space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                    {empTasks.length === 0 ? (
+                      <div className="h-full min-h-[100px] flex flex-col items-center justify-center border border-dashed border-border/20 rounded-xl bg-muted/5 py-6">
+                        <CheckCircle2 className="h-5 w-5 text-green-500/60 mb-1" />
+                        <p className="text-[11px] text-muted-foreground font-medium">All tasks completed!</p>
+                      </div>
+                    ) : (
+                      empTasks.map(t => (
+                        <div
+                          key={t._id}
+                          onClick={() => setDetailTask(t)}
+                          className="p-2.5 rounded-xl border border-border/40 hover:border-primary/20 bg-background/20 hover:bg-background/40 transition-colors cursor-pointer space-y-1 relative"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[11px] font-bold text-foreground/90 line-clamp-2 leading-tight">
+                              {t.title}
+                            </span>
+                            <Badge variant={PRIORITY_VARIANTS[t.priority]} className="capitalize text-[7px] py-0 px-1 font-bold rounded-sm shrink-0">
+                              {t.priority}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] text-muted-foreground font-medium">
+                            <Badge variant={STATUS_VARIANTS[t.status]} className="text-[7px] py-0 px-1 rounded-sm">
+                              {t.status}
+                            </Badge>
+                            {t.dueDate && (
+                              <span className="flex items-center gap-0.5">
+                                <Calendar className="h-2.5 w-2.5" />
+                                {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Task List */}
       <Card className="border-border/40 shadow-xl bg-card/40 backdrop-blur-sm">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <CardTitle className="text-xl font-bold">Team Tasks Tracker</CardTitle>
             <CardDescription>Overall tracking of work assigned to employees</CardDescription>
           </div>
-          <Badge variant="outline" className="h-6 font-mono rounded-lg">
-            {tasks.length} total
-          </Badge>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Input
+              placeholder="🔍 Search tasks..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="h-8 text-xs rounded-lg bg-background/50 border-border/40 max-w-[200px]"
+            />
+            <Badge variant="outline" className="h-6 font-mono rounded-lg shrink-0">
+              {tasks.length} total
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="border border-border/50 rounded-xl overflow-hidden bg-background/25">
@@ -352,7 +610,7 @@ const ManagerDashboard = () => {
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : tasks.length === 0 ? (
+                ) : filteredTasks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-16">
                       <div className="max-w-[320px] mx-auto flex flex-col items-center justify-center gap-3">
@@ -360,25 +618,31 @@ const ManagerDashboard = () => {
                           <AlertCircle className="h-6 w-6" />
                         </div>
                         <div className="space-y-1">
-                          <h4 className="font-bold text-foreground">No tasks assigned</h4>
+                          <h4 className="font-bold text-foreground">No tasks found</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Click "Create Task" to assign your first task to the team.
+                            {searchQuery ? `We couldn't find any tasks matching "${searchQuery}".` : 'Click "Create Task" to assign your first task to the team.'}
                           </p>
                         </div>
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  tasks.map(t => {
-                    const nextOptions = getNextStatusesForManager(t)
-                    const isSelfCreated = t.assignedBy?._id === t.assignedTo?._id || t.assignedBy === t.assignedTo
-                    
-                    return (
-                      <TableRow
-                        key={t._id}
-                        className="hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => setDetailTask(t)}
-                      >
+                  <AnimatePresence mode="popLayout">
+                    {filteredTasks.map(t => {
+                      const nextOptions = getNextStatusesForManager(t)
+                      const isSelfCreated = t.assignedBy?._id === t.assignedTo?._id || t.assignedBy === t.assignedTo
+                      
+                      return (
+                        <motion.tr
+                          key={t._id}
+                          layout
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 38, mass: 0.8 }}
+                          className="border-b border-border/40 hover:bg-muted/30 cursor-pointer transition-colors"
+                          onClick={() => setDetailTask(t)}
+                        >
                         <TableCell className="font-medium">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-sm font-bold text-foreground/90 flex items-center gap-1.5">
@@ -413,10 +677,16 @@ const ManagerDashboard = () => {
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                           {t.dueDate ? (
-                            <span className="flex items-center gap-1.5">
-                              <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
-                              {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </span>
+                            (() => {
+                              const isOverdue = new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)
+                              return (
+                                <span className={`flex items-center gap-1.5 ${isOverdue ? "text-destructive font-semibold" : ""}`}>
+                                  <Calendar className="h-3.5 w-3.5 text-muted-foreground/80" />
+                                  {isOverdue && "⚠️ "}
+                                  {new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                </span>
+                              )
+                            })()
                           ) : "—"}
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
@@ -460,9 +730,10 @@ const ManagerDashboard = () => {
                             </span>
                           </div>
                         </TableCell>
-                      </TableRow>
-                    )
-                  })
+                        </motion.tr>
+                      )
+                    })}
+                  </AnimatePresence>
                 )}
               </TableBody>
             </Table>
@@ -489,82 +760,17 @@ const ManagerDashboard = () => {
                 required
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="task-desc" className="text-foreground/80 font-medium">Description</Label>
-              <Textarea
-                id="task-desc"
-                value={taskForm.description}
-                onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))}
-                placeholder="Add task specification details..."
-                className="rounded-lg"
-                rows={3}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5 flex flex-col">
-                <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
-                <Select
-                  value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
-                  onValueChange={val => {
-                    if (val === "custom") {
-                      setCustomCategoryActive(true);
-                      setTaskForm(f => ({ ...f, category: "" }));
-                    } else {
-                      setCustomCategoryActive(false);
-                      setTaskForm(f => ({ ...f, category: val }));
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-10 rounded-lg">
-                    <SelectValue placeholder="Select Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_PRESETS.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                    <SelectItem value="custom">Custom...</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 flex flex-col">
-                <Label htmlFor="task-dept" className="mb-1 text-foreground/80 font-medium">Department</Label>
-                <Select
-                  value={taskForm.department || "none"}
-                  onValueChange={val => setTaskForm(f => ({ ...f, department: val === "none" ? "" : val }))}
-                >
-                  <SelectTrigger className="h-10 rounded-lg">
-                    <SelectValue placeholder="— None —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— None —</SelectItem>
-                    {departments.map(d => (
-                      <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {customCategoryActive && (
-              <div className="space-y-1.5 animate-in fade-in duration-200">
-                <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
-                <Input
-                  id="task-cat-custom"
-                  value={taskForm.category}
-                  onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="Enter custom category..."
-                  className="h-10 rounded-lg"
-                  required
-                />
-              </div>
-            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5 flex flex-col">
                 <Label htmlFor="task-assignee" className="mb-1 text-foreground/80 font-medium">Assigned To *</Label>
                 <Select
                   value={taskForm.assignedTo}
-                  onValueChange={val => setTaskForm(f => ({ ...f, assignedTo: val }))}
+                  onValueChange={val => {
+                    const chosenEmp = employees.find(emp => emp._id === val)
+                    const deptId = chosenEmp?.department?._id || chosenEmp?.department || ""
+                    setTaskForm(f => ({ ...f, assignedTo: val, department: deptId }))
+                  }}
                 >
                   <SelectTrigger className="h-10 rounded-lg">
                     <SelectValue placeholder="— Select Assignee —" />
@@ -615,29 +821,115 @@ const ManagerDashboard = () => {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
-                <Input
-                  type="number"
-                  id="task-hours"
-                  value={taskForm.estimatedHours}
-                  onChange={e => setTaskForm(f => ({ ...f, estimatedHours: Number(e.target.value) }))}
-                  min="0"
-                  className="h-10 rounded-lg"
-                />
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 border border-border/40 py-2"
+              onClick={() => setShowAdvancedTaskForm(!showAdvancedTaskForm)}
+            >
+              {showAdvancedTaskForm ? "▲ Hide Advanced Settings" : "▼ Show Advanced Settings (Description, Category, Dept, Hours, Due Date)"}
+            </Button>
+
+            {showAdvancedTaskForm && (
+              <div className="space-y-4 border-t border-border/40 pt-4 animate-in fade-in duration-200">
+                <div className="space-y-1.5">
+                  <Label htmlFor="task-desc" className="text-foreground/80 font-medium">Description</Label>
+                  <Textarea
+                    id="task-desc"
+                    value={taskForm.description}
+                    onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="Add task specification details..."
+                    className="rounded-lg"
+                    rows={3}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5 flex flex-col">
+                    <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
+                    <Select
+                      value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
+                      onValueChange={val => {
+                        if (val === "custom") {
+                          setCustomCategoryActive(true);
+                          setTaskForm(f => ({ ...f, category: "" }));
+                        } else {
+                          setCustomCategoryActive(false);
+                          setTaskForm(f => ({ ...f, category: val }));
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="Select Category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORY_PRESETS.map(cat => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                        <SelectItem value="custom">Custom...</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5 flex flex-col">
+                    <Label htmlFor="task-dept" className="mb-1 text-foreground/80 font-medium">Department</Label>
+                    <Select
+                      value={taskForm.department || "none"}
+                      onValueChange={val => setTaskForm(f => ({ ...f, department: val === "none" ? "" : val }))}
+                    >
+                      <SelectTrigger className="h-10 rounded-lg">
+                        <SelectValue placeholder="— None —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {departments.map(d => (
+                          <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {customCategoryActive && (
+                  <div className="space-y-1.5 animate-in fade-in duration-200">
+                    <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
+                    <Input
+                      id="task-cat-custom"
+                      value={taskForm.category}
+                      onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
+                      placeholder="Enter custom category..."
+                      className="h-10 rounded-lg"
+                      required
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
+                    <Input
+                      type="number"
+                      id="task-hours"
+                      value={taskForm.estimatedHours}
+                      onChange={e => setTaskForm(f => ({ ...f, estimatedHours: Number(e.target.value) }))}
+                      min="0"
+                      className="h-10 rounded-lg"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="task-due" className="text-foreground/80 font-medium">Due Date</Label>
+                    <Input
+                      type="date"
+                      id="task-due"
+                      value={taskForm.dueDate}
+                      onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))}
+                      className="h-10 rounded-lg text-foreground bg-transparent"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="task-due" className="text-foreground/80 font-medium">Due Date</Label>
-                <Input
-                  type="date"
-                  id="task-due"
-                  value={taskForm.dueDate}
-                  onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))}
-                  className="h-10 rounded-lg text-foreground bg-transparent"
-                />
-              </div>
-            </div>
+            )}
+
             <DialogFooter className="pt-4 gap-2">
               <Button type="button" variant="ghost" className="rounded-lg h-10" onClick={() => setCreateOpen(false)}>
                 Cancel
@@ -779,54 +1071,110 @@ const ManagerDashboard = () => {
                 </div>
               )}
 
-              {/* Comments Section */}
-              <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                  <MessageSquare className="h-4 w-4 text-primary" />
-                  Activity Stream ({detailTask.comments.length})
-                </h4>
+              {/* Activity & Workflow History Tabs */}
+              <div className="pt-2">
+                <Tabs defaultValue="comments" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 bg-muted/60 p-1 rounded-xl h-9 mb-4">
+                    <TabsTrigger value="comments" className="text-xs font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground">
+                      Discussion ({detailTask.comments?.length || 0})
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="text-xs font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground">
+                      Workflow Audit Log ({detailTask.history?.length || 0})
+                    </TabsTrigger>
+                  </TabsList>
 
-                {/* Comment log stream */}
-                <ScrollArea className="h-[150px] border border-border/40 rounded-xl bg-muted/10 p-3">
-                  {detailTask.comments.length === 0 ? (
-                    <div className="h-full flex items-center justify-center py-8">
-                      <p className="text-xs text-muted-foreground italic">No activities logged yet.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {detailTask.comments.map(c => {
-                        const authorInitials = c.author?.name ? c.author.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "US"
-                        return (
-                          <div key={c._id} className="text-xs flex gap-2.5 items-start">
-                            <div className="h-6 w-6 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold flex items-center justify-center text-[9px] shrink-0">
-                              {authorInitials}
-                            </div>
-                            <div className="flex-1 bg-card/60 p-2.5 rounded-lg border border-border/30 space-y-1 shadow-sm">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-foreground/80">{c.author?.name} <span className="text-[10px] text-muted-foreground font-normal">({c.author?.role})</span></span>
-                                <span className="text-[10px] text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</span>
+                  <TabsContent value="comments" className="space-y-3 mt-0 focus-visible:outline-none">
+                    {/* Comment log stream */}
+                    <ScrollArea className="h-[180px] border border-border/40 rounded-xl bg-muted/10 p-3">
+                      {detailTask.comments.length === 0 ? (
+                        <div className="h-full flex items-center justify-center py-8">
+                          <p className="text-xs text-muted-foreground italic">No activities logged yet.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {detailTask.comments.map(c => {
+                            const authorInitials = c.author?.name ? c.author.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "US"
+                            return (
+                              <div key={c._id} className="text-xs flex gap-2.5 items-start">
+                                <div className="h-6 w-6 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold flex items-center justify-center text-[9px] shrink-0">
+                                  {authorInitials}
+                                </div>
+                                <div className="flex-1 bg-card/60 p-2.5 rounded-lg border border-border/30 space-y-1 shadow-sm">
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-bold text-foreground/80">{c.author?.name} <span className="text-[10px] text-muted-foreground font-normal">({c.author?.role})</span></span>
+                                    <span className="text-[10px] text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</span>
+                                  </div>
+                                  <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{c.text}</p>
+                                </div>
                               </div>
-                              <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{c.text}</p>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </ScrollArea>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
 
-                {/* Post comment form */}
-                <form onSubmit={handlePostComment} className="flex gap-2">
-                  <Input
-                    placeholder="Write a message..."
-                    value={newComment}
-                    onChange={e => setNewComment(e.target.value)}
-                    className="flex-1 h-9 text-xs rounded-lg"
-                  />
-                  <Button type="submit" size="icon" className="h-9 w-9 rounded-lg shrink-0">
-                    <Send className="h-3.5 w-3.5" />
-                  </Button>
-                </form>
+                    {/* Post comment form */}
+                    <form onSubmit={handlePostComment} className="flex gap-2">
+                      <Input
+                        placeholder="Write a message..."
+                        value={newComment}
+                        onChange={e => setNewComment(e.target.value)}
+                        className="flex-1 h-9 text-xs rounded-lg"
+                      />
+                      <Button type="submit" size="icon" className="h-9 w-9 rounded-lg shrink-0">
+                        <Send className="h-3.5 w-3.5" />
+                      </Button>
+                    </form>
+                  </TabsContent>
+
+                  <TabsContent value="history" className="space-y-3 mt-0 focus-visible:outline-none">
+                    {/* History log stream */}
+                    <ScrollArea className="h-[220px] border border-border/40 rounded-xl bg-muted/10 p-3">
+                      {!detailTask.history || detailTask.history.length === 0 ? (
+                        <div className="h-full flex items-center justify-center py-8">
+                          <p className="text-xs text-muted-foreground italic">No state changes logged yet.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 pl-3 relative border-l border-border/60 ml-2.5 my-2">
+                          {detailTask.history.map((h, i) => {
+                            const changerInitials = h.changedBy?.name 
+                              ? h.changedBy.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+                              : "US"
+                            return (
+                              <div key={h._id || i} className="relative text-xs space-y-1">
+                                {/* Connector dot */}
+                                <div className="absolute -left-[18px] top-1 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background ring-4 ring-primary/10" />
+                                
+                                <div className="flex justify-between items-center pl-1">
+                                  <span className="font-bold text-foreground/80">
+                                    {h.changedBy?.name || "System"} 
+                                    <span className="text-[10px] text-muted-foreground font-normal"> ({h.changedBy?.role || "System"})</span>
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {new Date(h.timestamp).toLocaleDateString()} at {new Date(h.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                                
+                                <div className="bg-card/50 p-2.5 rounded-lg border border-border/20 pl-4 ml-1 space-y-1.5 shadow-sm">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-muted-foreground bg-muted/40 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{h.fromStatus}</span>
+                                    <span className="text-muted-foreground/50 text-[10px]">➔</span>
+                                    <span className="font-bold text-primary bg-primary/10 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{h.toStatus}</span>
+                                  </div>
+                                  {h.comment && (
+                                    <p className="text-muted-foreground italic pl-1.5 text-[11px] border-l-2 border-primary/20 leading-relaxed">
+                                      "{h.comment}"
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           </DialogContent>

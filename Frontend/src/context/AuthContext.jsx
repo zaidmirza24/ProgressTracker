@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react"
 import axios from "axios"
 import API_BASE from "../lib/api"
+import { extractErrorMessage } from "../lib/utils"
 
 const AuthContext = createContext(null)
 
@@ -40,7 +41,7 @@ export const AuthProvider = ({ children }) => {
       setUser(newUser)
       return { success: true }
     } catch (err) {
-      const errorMessage = err.response?.data?.error || "Login failed. Please check credentials."
+      const errorMessage = extractErrorMessage(err, "Login failed. Please check credentials.")
       return { success: false, error: errorMessage }
     }
   }

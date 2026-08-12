@@ -159,7 +159,9 @@ const Layout = () => {
 
       {/* Live Timer Widget */}
       {user.role === "employee" && activeSession && (
-        <div className="p-4 m-4 rounded-xl bg-gradient-to-b from-card to-card/50 border border-border/80 shadow-lg space-y-3 relative overflow-hidden group">
+        <div className={`p-4 m-4 rounded-xl bg-gradient-to-b from-card to-card/50 border shadow-lg space-y-3 relative overflow-hidden group transition-all duration-300 ${
+          isRunning ? "border-primary/45 ring-1 ring-primary/20 shadow-primary/5" : "border-border/80"
+        }`}>
           <div className="absolute top-0 right-0 h-24 w-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/10 transition-all duration-300"></div>
           
           <div className="space-y-1 relative">
@@ -171,7 +173,7 @@ const Layout = () => {
           </div>
           
           <div className="flex items-center justify-between relative">
-            <span className="font-mono text-2xl font-bold tracking-tight text-foreground/95">
+            <span className={`font-mono text-2xl font-bold tracking-tight transition-colors duration-300 ${isRunning ? "text-primary animate-pulse" : "text-foreground/95"}`}>
               {formatTime(elapsedSeconds)}
             </span>
             

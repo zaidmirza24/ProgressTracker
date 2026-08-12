@@ -35,7 +35,22 @@ const TaskSchema = new mongoose.Schema(
     },
     progressPercentage: { type: Number, default: 0 },
     comments: [CommentSchema],
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    // Daily task tracking
+    isDaily: { type: Boolean, default: false },
+    isCarryForward: { type: Boolean, default: false },
+    templateRef: { type: mongoose.Schema.Types.ObjectId, ref: "TaskTemplate", default: null },
+    dailyDate: { type: Date, default: null }, // The calendar day this daily task was generated for
+    // Transition Audit History
+    history: [
+      {
+        fromStatus: { type: String, required: true },
+        toStatus: { type: String, required: true },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        comment: { type: String, default: "" },
+        timestamp: { type: Date, default: Date.now }
+      }
+    ]
   },
   { timestamps: true }
 )

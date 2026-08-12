@@ -110,10 +110,15 @@ export const TimerProvider = ({ children }) => {
       setElapsedSeconds(serverSeconds)
       setIsRunning(serverRunning)
     } catch (err) {
-      // Rollback
-      setActiveSession(prevSession)
-      setElapsedSeconds(prevElapsed)
-      setIsRunning(prevRunning)
+      if (err.response?.status === 404) {
+        setActiveSession(null)
+        setElapsedSeconds(0)
+        setIsRunning(false)
+      } else {
+        setActiveSession(prevSession)
+        setElapsedSeconds(prevElapsed)
+        setIsRunning(prevRunning)
+      }
       console.error("Error pausing timer:", err)
     } finally {
       setIsPending(false)
@@ -137,10 +142,15 @@ export const TimerProvider = ({ children }) => {
       setElapsedSeconds(serverSeconds)
       setIsRunning(serverRunning)
     } catch (err) {
-      // Rollback
-      setActiveSession(prevSession)
-      setElapsedSeconds(prevElapsed)
-      setIsRunning(prevRunning)
+      if (err.response?.status === 404) {
+        setActiveSession(null)
+        setElapsedSeconds(0)
+        setIsRunning(false)
+      } else {
+        setActiveSession(prevSession)
+        setElapsedSeconds(prevElapsed)
+        setIsRunning(prevRunning)
+      }
       console.error("Error resuming timer:", err)
     } finally {
       setIsPending(false)
@@ -162,10 +172,15 @@ export const TimerProvider = ({ children }) => {
     try {
       await axios.post(`${API_BASE}/api/work-sessions/stop`)
     } catch (err) {
-      // Rollback
-      setActiveSession(prevSession)
-      setElapsedSeconds(prevElapsed)
-      setIsRunning(prevRunning)
+      if (err.response?.status === 404) {
+        setActiveSession(null)
+        setElapsedSeconds(0)
+        setIsRunning(false)
+      } else {
+        setActiveSession(prevSession)
+        setElapsedSeconds(prevElapsed)
+        setIsRunning(prevRunning)
+      }
       console.error("Error stopping timer:", err)
     } finally {
       setIsPending(false)

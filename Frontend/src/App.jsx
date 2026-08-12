@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { TimerProvider } from "./context/TimerContext"
 import { ThemeProvider } from "./context/ThemeContext"
+import ErrorBoundary from "./components/ErrorBoundary"
+import { ToastProvider } from "./context/ToastContext"
 import Layout from "./components/Layout"
 import ProtectedRoute from "./components/ProtectedRoute"
 import Login from "./pages/Login"
@@ -23,9 +25,11 @@ const HomeRedirect = () => {
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <BrowserRouter>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
@@ -75,9 +79,11 @@ function App() {
           {/* Fallback Catch-all Route */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </ThemeProvider>
+            </BrowserRouter>
+          </AuthProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }
 
