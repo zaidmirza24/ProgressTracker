@@ -1,36 +1,32 @@
+// Canonical workflow (locked product logic): Not Started → In Progress → Pending → In Review → Completed
+// "In Review" only applies to tasks that require manager review (manager-assigned tasks).
+// Self-assigned tasks (assignedBy === assignedTo, incl. Daily Tasks) never require review and can be
+// completed directly by the employee. Completed tasks are locked — employees cannot reopen them.
 export const WORKFLOW_RULES = {
   employee: {
     self_assigned: {
-      "Not Started": ["Accepted", "In Progress"],
-      "Accepted": ["In Progress"],
-      "In Progress": ["Completed"],
-      "Completed": ["In Progress"]
+      "Not Started": ["In Progress"],
+      "In Progress": ["Pending", "Completed"],
+      "Pending": ["In Progress"]
     },
     manager_assigned: {
-      "Not Started": ["Accepted", "In Progress"],
-      "Accepted": ["In Progress"],
-      "In Progress": ["Waiting for Review"],
-      "Rejected": ["In Progress"],
-      "Reopened": ["In Progress"]
+      "Not Started": ["In Progress"],
+      "In Progress": ["Pending", "In Review"],
+      "Pending": ["In Progress"]
     }
   },
   manager: {
-    "Not Started": ["Accepted", "In Progress"],
-    "Accepted": ["In Progress"],
-    "In Progress": ["Waiting for Review"],
-    "Waiting for Review": ["Approved", "Rejected"],
-    "Approved": ["Reopened"],
-    "Rejected": ["In Progress"],
-    "Reopened": ["In Progress"]
+    "Not Started": ["In Progress"],
+    "In Progress": ["Pending", "In Review", "Completed"],
+    "Pending": ["In Progress"],
+    "In Review": ["Completed", "In Progress"], // Approve, or send back for rework
+    "Completed": ["In Progress"] // Reopen for correction
   },
   super_admin: {
-    "Not Started": ["Accepted", "In Progress"],
-    "Accepted": ["In Progress"],
-    "In Progress": ["Completed", "Waiting for Review"],
-    "Waiting for Review": ["Approved", "Rejected"],
-    "Approved": ["Reopened"],
-    "Rejected": ["In Progress"],
-    "Reopened": ["In Progress"],
+    "Not Started": ["In Progress"],
+    "In Progress": ["Pending", "In Review", "Completed"],
+    "Pending": ["In Progress"],
+    "In Review": ["Completed", "In Progress"],
     "Completed": ["In Progress"]
   }
 }

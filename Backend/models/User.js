@@ -41,6 +41,15 @@ const UserSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true
+    },
+    // V1 single-day capacity planning (Locked Logic §6)
+    dailyWorkingHours: {
+      type: Number,
+      default: 8
+    },
+    breakHours: {
+      type: Number,
+      default: 1
     }
   },
   {

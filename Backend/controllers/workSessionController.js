@@ -42,6 +42,20 @@ const performStopSession = async (session) => {
   await session.save()
 }
 
+// A task only reflects "In Progress" while its timer is actively running. Any time the timer
+// leaves the running state (pause, switch, stop) the task falls back to "Pending" so the
+// Pending-backlog signal stays accurate. Server-side only — matches the locked timer rules.
+const setTaskStatus = async (taskId, toStatus, changedBy, comment) => {
+  const task = await Task.findById(taskId)
+  if (!task || task.status === toStatus) return
+  const fromStatus = task.status
+  if (fromStatus !== "In Progress" && toStatus !== "In Progress") return
+  task.status = toStatus
+  task.progressPercentage = toStatus === "In Progress" ? 50 : task.progressPercentage
+  task.history.push({ fromStatus, toStatus, changedBy, comment })
+  await task.save()
+}
+
 export const getActiveSession = asyncHandler(async (req, res) => {
   const session = await WorkSession.findOne({
     employee: req.user.id,
@@ -75,6 +89,8 @@ export const startSession = asyncHandler(async (req, res, next) => {
 
   if (activeSession) {
     await performStopSession(activeSession)
+    // Switching tasks pauses the previous one — it falls back to Pending
+    await setTaskStatus(activeSession.task, "Pending", req.user.id, "Switched to another task")
   }
 
   // 2. Create the new work session
@@ -84,9 +100,10 @@ export const startSession = asyncHandler(async (req, res, next) => {
     startedAt: new Date()
   })
 
-  // 3. Update task status to "In Progress" if it is Not Started, Accepted, or Reopened
+  // 3. Update task status to "In Progress" if it is Not Started or Pending
   const task = await Task.findById(taskId)
-  if (task && ["Not Started", "Accepted", "Reopened", "Rejected"].includes(task.status)) {
+  if (task && ["Not Started", "Pending"].includes(task.status)) {
+    task.history.push({ fromStatus: task.status, toStatus: "In Progress", changedBy: req.user.id, comment: "Timer started" })
     task.status = "In Progress"
     task.progressPercentage = 50
     await task.save()
@@ -126,6 +143,7 @@ export const pauseSession = asyncHandler(async (req, res, next) => {
   })
 
   await session.save()
+  await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer paused")
 
   res.json({
     session,
@@ -155,6 +173,7 @@ export const resumeSession = asyncHandler(async (req, res, next) => {
   })
 
   await session.save()
+  await setTaskStatus(session.task._id, "In Progress", req.user.id, "Timer resumed")
 
   res.json({
     session,
@@ -174,6 +193,7 @@ export const stopSession = asyncHandler(async (req, res, next) => {
   }
 
   await performStopSession(session)
+  await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer stopped")
 
   res.json({
     success: true,

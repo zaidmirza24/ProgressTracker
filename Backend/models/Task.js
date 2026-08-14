@@ -21,16 +21,7 @@ const TaskSchema = new mongoose.Schema(
     dueDate: { type: Date, default: null },
     status: {
       type: String,
-      enum: [
-        "Not Started",
-        "Accepted",
-        "In Progress",
-        "Waiting for Review",
-        "Completed",
-        "Approved",
-        "Rejected",
-        "Reopened"
-      ],
+      enum: ["Not Started", "In Progress", "Pending", "In Review", "Completed"],
       default: "Not Started"
     },
     progressPercentage: { type: Number, default: 0 },

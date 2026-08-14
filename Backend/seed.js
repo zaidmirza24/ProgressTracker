@@ -51,7 +51,7 @@ const seed = async () => {
     // Super Admin
     const superAdmin = await User.create({
       name: "Super Admin",
-      email: "admin@company.com",
+      email: "admin@tradex.com",
       passwordHash,
       role: "super_admin",
       isActive: true
@@ -60,7 +60,7 @@ const seed = async () => {
     // Managers
     const managerJohn = await User.create({
       name: "John Miller",
-      email: "john@company.com",
+      email: "logistics@tradex.com",
       passwordHash,
       role: "manager",
       department: deptEngineering._id,
@@ -70,7 +70,7 @@ const seed = async () => {
 
     const managerPriya = await User.create({
       name: "Priya Sharma",
-      email: "priya@company.com",
+      email: "sales@tradex.com",
       passwordHash,
       role: "manager",
       department: deptProduct._id,
@@ -81,7 +81,7 @@ const seed = async () => {
     // Employees
     const employeeSarah = await User.create({
       name: "Sarah Chen",
-      email: "sarah@company.com",
+      email: "emp1@tradex.com",
       passwordHash,
       role: "employee",
       department: deptEngineering._id,
@@ -92,7 +92,7 @@ const seed = async () => {
 
     const employeeAlex = await User.create({
       name: "Alex Kim",
-      email: "alex@company.com",
+      email: "emp2@tradex.com",
       passwordHash,
       role: "employee",
       department: deptEngineering._id,
@@ -103,7 +103,7 @@ const seed = async () => {
 
     const employeeMaya = await User.create({
       name: "Maya Patel",
-      email: "maya@company.com",
+      email: "emp3@tradex.com",
       passwordHash,
       role: "employee",
       department: deptProduct._id,
@@ -150,8 +150,7 @@ const seed = async () => {
       status: "In Progress",
       progressPercentage: 50,
       history: [
-        { fromStatus: "Not Started", toStatus: "Accepted", changedBy: employeeSarah._id, comment: "Accepted task assignment" },
-        { fromStatus: "Accepted", toStatus: "In Progress", changedBy: employeeSarah._id, comment: "Starting development" }
+        { fromStatus: "Not Started", toStatus: "In Progress", changedBy: employeeSarah._id, comment: "Starting development" }
       ]
     })
 
@@ -193,15 +192,14 @@ const seed = async () => {
       assignedTo: employeeAlex._id,
       priority: "high",
       estimatedHours: 3,
-      status: "Waiting for Review",
+      status: "In Review",
       progressPercentage: 90,
       comments: [
         { text: "Resolved the state parameter mismatch on redirects.", author: employeeAlex._id }
       ],
       history: [
-        { fromStatus: "Not Started", toStatus: "Accepted", changedBy: employeeAlex._id },
-        { fromStatus: "Accepted", toStatus: "In Progress", changedBy: employeeAlex._id },
-        { fromStatus: "In Progress", toStatus: "Waiting for Review", changedBy: employeeAlex._id, comment: "Submitting for review" }
+        { fromStatus: "Not Started", toStatus: "In Progress", changedBy: employeeAlex._id },
+        { fromStatus: "In Progress", toStatus: "In Review", changedBy: employeeAlex._id, comment: "Submitting for review" }
       ]
     })
 
@@ -215,15 +213,14 @@ const seed = async () => {
       assignedTo: employeeMaya._id,
       priority: "low",
       estimatedHours: 2,
-      status: "Waiting for Review",
+      status: "In Review",
       progressPercentage: 90,
       comments: [
         { text: "Swagger docs updated for v2 endpoints.", author: employeeMaya._id }
       ],
       history: [
-        { fromStatus: "Not Started", toStatus: "Accepted", changedBy: employeeMaya._id },
-        { fromStatus: "Accepted", toStatus: "In Progress", changedBy: employeeMaya._id },
-        { fromStatus: "In Progress", toStatus: "Waiting for Review", changedBy: employeeMaya._id, comment: "Please review Swagger updates." }
+        { fromStatus: "Not Started", toStatus: "In Progress", changedBy: employeeMaya._id },
+        { fromStatus: "In Progress", toStatus: "In Review", changedBy: employeeMaya._id, comment: "Please review Swagger updates." }
       ]
     })
 

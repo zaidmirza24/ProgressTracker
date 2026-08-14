@@ -3,7 +3,7 @@ import User from "../models/User.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
 
-const populateFields = "name email role department team manager isActive createdAt"
+const populateFields = "name email role department team manager isActive createdAt dailyWorkingHours breakHours"
 
 export const getUsers = asyncHandler(async (req, res) => {
   const users = await User.find({ isActive: true })
@@ -16,7 +16,7 @@ export const getUsers = asyncHandler(async (req, res) => {
 })
 
 export const createUser = asyncHandler(async (req, res, next) => {
-  const { name, email, password, role, department, team, manager } = req.body
+  const { name, email, password, role, department, team, manager, dailyWorkingHours, breakHours } = req.body
   if (!name || !email || !password || !role) {
     return next(new AppError("name, email, password, and role are required", 400))
   }
@@ -25,7 +25,9 @@ export const createUser = asyncHandler(async (req, res, next) => {
     name, email, passwordHash, role,
     department: department || null,
     team: team || null,
-    manager: manager || null
+    manager: manager || null,
+    ...(dailyWorkingHours !== undefined && { dailyWorkingHours }),
+    ...(breakHours !== undefined && { breakHours })
   })
   const populated = await User.findById(user._id)
     .select(populateFields)
@@ -36,13 +38,15 @@ export const createUser = asyncHandler(async (req, res, next) => {
 })
 
 export const updateUser = asyncHandler(async (req, res, next) => {
-  const { name, email, role, department, team, manager } = req.body
+  const { name, email, role, department, team, manager, dailyWorkingHours, breakHours } = req.body
   const user = await User.findByIdAndUpdate(
     req.params.id,
     { name, email, role,
       department: department || null,
       team: team || null,
-      manager: manager || null
+      manager: manager || null,
+      ...(dailyWorkingHours !== undefined && { dailyWorkingHours }),
+      ...(breakHours !== undefined && { breakHours })
     },
     { new: true }
   ).select(populateFields)

@@ -47,7 +47,7 @@ const attachTrackedSecondsToTasks = async (taskObjects) => {
   return taskObjects.map(t => {
     const id = t._id.toString()
     const totalTrackedSeconds = (stoppedMap[id] || 0) + (activeMap[id] || 0)
-    return { ...t, totalTrackedSeconds }
+    return { ...t, totalTrackedSeconds, ...computeOverrunFields(t.estimatedHours, totalTrackedSeconds) }
   })
 }
 
@@ -60,20 +60,48 @@ const getTaskWithTime = async (task) => {
   }
   const tObj = task.toObject ? task.toObject() : task
   tObj.totalTrackedSeconds = totalTrackedSeconds
+  Object.assign(tObj, computeOverrunFields(tObj.estimatedHours, totalTrackedSeconds))
   return tObj
+}
+
+// Compute Estimated vs Actual variance/overrun fields (Locked Logic §5)
+const computeOverrunFields = (estimatedHours, totalTrackedSeconds) => {
+  const estimatedSeconds = (estimatedHours || 0) * 3600
+  const timeVarianceSeconds = totalTrackedSeconds - estimatedSeconds
+  const overrunPercentage = estimatedSeconds > 0
+    ? Math.round((timeVarianceSeconds / estimatedSeconds) * 100)
+    : 0
+  const isOverrun = estimatedSeconds > 0 && timeVarianceSeconds > 0
+  return { timeVarianceSeconds, overrunPercentage, isOverrun }
+}
+
+// Estimation pattern detection (Locked Logic §10) — a majority of the last few
+// completed+estimated tasks overrunning is a signal worth surfacing, never punitive.
+const PATTERN_LOOKBACK = 5
+const PATTERN_MIN_SAMPLE = 3
+const PATTERN_THRESHOLD = 0.5
+
+const isSameCalendarDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+
+// Days a task has been sitting in Pending, using the last transition into Pending
+// (Locked Logic §8 — track how long each task has sat pending). Falls back to
+// updatedAt if no matching history entry exists.
+const getPendingAgeDays = (task) => {
+  if (task.status !== "Pending") return null
+  const lastPendingEntry = [...(task.history || [])].reverse().find(h => h.toStatus === "Pending")
+  const since = lastPendingEntry ? new Date(lastPendingEntry.timestamp) : new Date(task.updatedAt)
+  return Math.max(0, (Date.now() - since.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 // Map status → default progress %
 const getProgressForStatus = (status) => {
   switch (status) {
     case "Not Started": return 0
-    case "Accepted": return 10
     case "In Progress": return 50
-    case "Waiting for Review": return 90
-    case "Completed":
-    case "Approved": return 100
-    case "Rejected": return 50
-    case "Reopened": return 10
+    case "Pending": return 50
+    case "In Review": return 90
+    case "Completed": return 100
     default: return 0
   }
 }
@@ -137,7 +165,7 @@ export const createTask = asyncHandler(async (req, res, next) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
 
-  res.status(201).json({ task: { ...populatedTask.toObject(), totalTrackedSeconds: 0 } })
+  res.status(201).json({ task: { ...populatedTask.toObject(), totalTrackedSeconds: 0, ...computeOverrunFields(populatedTask.estimatedHours, 0) } })
 })
 
 // ─── PUT /api/tasks/:id/status ────────────────────────────────────────────────
@@ -158,11 +186,7 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     return next(new AppError(`Forbidden status transition from '${oldStatus}' to '${status}' for role '${req.user.role}'`, 400))
   }
 
-  let finalStatus = status
-  // Self-assigned tasks: Waiting for Review → Completed directly
-  if (isSelfAssigned && status === "Waiting for Review") {
-    finalStatus = "Completed"
-  }
+  const finalStatus = status
 
   // Update status and default progress
   task.status = finalStatus
@@ -301,7 +325,7 @@ export const ensureDailyTasks = asyncHandler(async (req, res) => {
     isDaily: true,
     isActive: true,
     dailyDate: { $lt: startOfToday },
-    status: { $nin: ["Completed", "Approved"] }
+    status: { $nin: ["Completed"] }
   })
 
   // Mark them with a carry-forward flag by updating dailyDate to today if not already updated today
@@ -383,8 +407,13 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     trackedMap[sid] = (stoppedMap[sid] || 0) + (activeMap[sid] || 0)
   })
 
-  // ── 3. Fetch all active users ──────────────────────────────────────────────
-  const users = await User.find({ isActive: true, role: "employee" })
+  // ── 3. Fetch active employees — a manager sees only their direct reports;
+  //      super_admin sees the whole org (Locked Logic §12) ────────────────────
+  const userFilter = { isActive: true, role: "employee" }
+  if (req.user.role === "manager") {
+    userFilter.manager = req.user.id
+  }
+  const users = await User.find(userFilter)
     .populate("department", "name")
     .populate("team", "name")
     .lean()
@@ -393,10 +422,10 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   const employeeReport = users.map(u => {
     const uTasks = tasks.filter(t => t.assignedTo && t.assignedTo._id.toString() === u._id.toString())
     const total = uTasks.length
-    const completed = uTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const completed = uTasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = uTasks.filter(t => t.status === "In Progress").length
-    const rejected = uTasks.filter(t => t.status === "Rejected").length
-    const overdue = uTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const pending = uTasks.filter(t => t.status === "Pending").length
+    const overdue = uTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
     const totalTrackedSeconds = uTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const avgProgress = total > 0 ? Math.round(uTasks.reduce((acc, t) => acc + t.progressPercentage, 0) / total) : 0
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
@@ -417,10 +446,10 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     }))
 
     // Calculate Avg. Resolution Velocity in Days
-    const completedTasks = uTasks.filter(t => ["Completed", "Approved"].includes(t.status))
+    const completedTasks = uTasks.filter(t => ["Completed"].includes(t.status))
     let totalResolutionTimeMs = 0
     completedTasks.forEach(t => {
-      const completionHistory = t.history?.find(h => ["Completed", "Approved"].includes(h.toStatus))
+      const completionHistory = t.history?.find(h => ["Completed"].includes(h.toStatus))
       const completionTime = completionHistory ? new Date(completionHistory.timestamp) : new Date(t.updatedAt)
       const duration = completionTime.getTime() - new Date(t.createdAt).getTime()
       totalResolutionTimeMs += Math.max(0, duration)
@@ -441,6 +470,64 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       ? Math.round((totalEstimatedHours / Math.max(0.1, totalTrackedHoursForEst)) * 100)
       : 100 // default to 100 if no estimates configured
 
+    // Daily vs Assigned completion, tracked separately (Locked Logic §7) — Overall
+    // completionRate above is the derived summary, not the primary metric.
+    const dailyTasks = uTasks.filter(t => t.isDaily)
+    const dailyNewCount = dailyTasks.filter(t => !t.isCarryForward).length
+    const dailyCarriedForwardCount = dailyTasks.filter(t => t.isCarryForward).length
+    const dailyCompletedCount = dailyTasks.filter(t => t.status === "Completed").length
+    const dailyCompletionRate = dailyTasks.length > 0 ? Math.round((dailyCompletedCount / dailyTasks.length) * 100) : 0
+
+    const assignedTasks = uTasks.filter(t => !t.isDaily)
+    const assignedCompletedCount = assignedTasks.filter(t => t.status === "Completed").length
+    const assignedCompletionRate = assignedTasks.length > 0 ? Math.round((assignedCompletedCount / assignedTasks.length) * 100) : 0
+
+    // Planned vs Actual Capacity Utilization + a distinct Capacity Overrun signal —
+    // today only, matching V1 single-day capacity planning (Locked Logic §6/§7).
+    const today = new Date()
+    const todaysTasks = uTasks.filter(t => {
+      const relevantDate = t.isDaily ? t.dailyDate : t.dueDate
+      return relevantDate && isSameCalendarDay(new Date(relevantDate), today)
+    })
+    const capacityHours = Math.max(0, (u.dailyWorkingHours ?? 8) - (u.breakHours ?? 1))
+    const plannedHoursToday = todaysTasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0)
+    const actualHoursToday = todaysTasks.reduce((sum, t) => sum + (trackedMap[t._id.toString()] || 0), 0) / 3600
+    const plannedUtilizationPct = capacityHours > 0 ? Math.round((plannedHoursToday / capacityHours) * 100) : 0
+    const actualUtilizationPct = capacityHours > 0 ? Math.round((actualHoursToday / capacityHours) * 100) : 0
+    const isCapacityOverrunToday = actualHoursToday > capacityHours
+
+    // Estimation pattern (Locked Logic §10) — always retains the underlying task-level
+    // data (recentEstimatedTasks) so a manager can drill into exactly which tasks caused it.
+    const recentEstimatedTasks = [...completedWithEstimation]
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+      .slice(0, PATTERN_LOOKBACK)
+      .map(t => {
+        const trackedSeconds = trackedMap[t._id.toString()] || 0
+        const estimatedSeconds = t.estimatedHours * 3600
+        return {
+          _id: t._id,
+          title: t.title,
+          estimatedHours: t.estimatedHours,
+          trackedHours: parseFloat((trackedSeconds / 3600).toFixed(1)),
+          overrunPercentage: estimatedSeconds > 0 ? Math.round(((trackedSeconds - estimatedSeconds) / estimatedSeconds) * 100) : 0,
+          isOverrun: trackedSeconds > estimatedSeconds
+        }
+      })
+    const recentOverrunCount = recentEstimatedTasks.filter(t => t.isOverrun).length
+    const recentOverrunProportion = recentEstimatedTasks.length > 0
+      ? parseFloat((recentOverrunCount / recentEstimatedTasks.length).toFixed(2))
+      : 0
+    const hasOverrunPattern = recentEstimatedTasks.length >= PATTERN_MIN_SAMPLE && recentOverrunProportion > PATTERN_THRESHOLD
+
+    // Pending backlog age (Locked Logic §8)
+    const pendingAges = uTasks.map(getPendingAgeDays).filter(a => a !== null)
+    const pendingBacklogAvgAgeDays = pendingAges.length > 0
+      ? parseFloat((pendingAges.reduce((a, b) => a + b, 0) / pendingAges.length).toFixed(1))
+      : 0
+    const pendingBacklogOldestAgeDays = pendingAges.length > 0
+      ? parseFloat(Math.max(...pendingAges).toFixed(1))
+      : 0
+
     return {
       _id: u._id,
       name: u.name,
@@ -450,14 +537,31 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       total,
       completed,
       inProgress,
-      rejected,
+      pending,
       overdue,
       totalTrackedSeconds,
       avgProgress,
       completionRate,
       tasks: employeeTasks,
       avgResolutionDays,
-      estimationAccuracy
+      estimationAccuracy,
+      // Productivity signals (Locked Logic §7/§8/§11) — kept separate, never combined
+      // into a single score.
+      dailyCompletionRate,
+      dailyNewCount,
+      dailyCarriedForwardCount,
+      assignedCompletionRate,
+      assignedTotal: assignedTasks.length,
+      overallCompletionRate: completionRate,
+      capacityHoursToday: capacityHours,
+      plannedUtilizationPct,
+      actualUtilizationPct,
+      isCapacityOverrunToday,
+      pendingBacklogAvgAgeDays,
+      pendingBacklogOldestAgeDays,
+      hasOverrunPattern,
+      recentOverrunProportion,
+      recentEstimatedTasks
     }
   })
 
@@ -472,9 +576,9 @@ export const getProgressReport = asyncHandler(async (req, res) => {
 
   const departmentReport = Object.values(deptMap).map(d => {
     const total = d.tasks.length
-    const completed = d.tasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const completed = d.tasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = d.tasks.filter(t => t.status === "In Progress").length
-    const overdue = d.tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const overdue = d.tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
     const totalTrackedSeconds = d.tasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
     const memberSet = new Set(d.tasks.map(t => t.assignedTo?._id?.toString()).filter(Boolean))
@@ -493,9 +597,9 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   const teamReport = Object.values(teamUserMap).map(team => {
     const tTasks = tasks.filter(t => t.assignedTo && team.memberIds.includes(t.assignedTo._id.toString()))
     const total = tTasks.length
-    const completed = tTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length
+    const completed = tTasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = tTasks.filter(t => t.status === "In Progress").length
-    const overdue = tTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+    const overdue = tTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
     const totalTrackedSeconds = tTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
     return { teamId: team.teamId, name: team.teamName, total, completed, inProgress, overdue, totalTrackedSeconds, completionRate, memberCount: team.memberIds.length }
@@ -505,15 +609,15 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   const allTasks = tasks
   const healthReport = {
     totalTasks: allTasks.length,
-    completedTasks: allTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length,
+    completedTasks: allTasks.filter(t => ["Completed"].includes(t.status)).length,
     inProgressTasks: allTasks.filter(t => t.status === "In Progress").length,
     notStartedTasks: allTasks.filter(t => t.status === "Not Started").length,
-    overdueTasks: allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length,
-    rejectedTasks: allTasks.filter(t => t.status === "Rejected").length,
-    waitingReviewTasks: allTasks.filter(t => t.status === "Waiting for Review").length,
+    overdueTasks: allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length,
+    pendingTasks: allTasks.filter(t => t.status === "Pending").length,
+    inReviewTasks: allTasks.filter(t => t.status === "In Review").length,
     totalTrackedSeconds: Object.values(trackedMap).reduce((a, b) => a + b, 0),
     avgCompletionRate: allTasks.length > 0
-      ? Math.round(allTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length / allTasks.length * 100)
+      ? Math.round(allTasks.filter(t => ["Completed"].includes(t.status)).length / allTasks.length * 100)
       : 0
   }
 
@@ -523,8 +627,8 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     return {
       priority: p,
       total: pTasks.length,
-      completed: pTasks.filter(t => ["Completed", "Approved"].includes(t.status)).length,
-      overdue: pTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed", "Approved"].includes(t.status)).length
+      completed: pTasks.filter(t => ["Completed"].includes(t.status)).length,
+      overdue: pTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
     }
   })
 
