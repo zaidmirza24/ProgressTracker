@@ -1,15 +1,13 @@
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../context/AuthContext"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Building2, Users, UserPlus, Shield, BarChart3, Repeat } from "lucide-react"
-import DepartmentsTab from "../../components/dashboards/superadmin/DepartmentsTab"
-import TeamsTab from "../../components/dashboards/superadmin/TeamsTab"
-import UsersTab from "../../components/dashboards/superadmin/UsersTab/UsersTab"
-import TaskTemplatesTab from "../../components/dashboards/superadmin/TaskTemplatesTab"
-import ReportsTab from "../../components/dashboards/superadmin/ReportsTab/ReportsTab"
+import { Shield } from "lucide-react"
+import OrgPulseStrip from "../../components/dashboards/superadmin/OrgPulseStrip"
+import TeamCommandCenter from "../../components/dashboards/shared/TeamCommandCenter"
 
 // ─── Super Admin Dashboard ───────────────────────────────────────────────────
 const SuperAdminDashboard = () => {
   const { user } = useAuth()
+  const navigate = useNavigate()
 
   return (
     <div className="space-y-8">
@@ -19,60 +17,14 @@ const SuperAdminDashboard = () => {
           Super Admin Center
         </h2>
         <p className="text-muted-foreground">
-          Welcome, <strong className="text-foreground">{user?.name}</strong>. Manage departments, teams, and user assignments.
+          Welcome, <strong className="text-foreground">{user?.name}</strong>. Monitor org-wide task activity and team performance.
         </p>
       </div>
 
-      <Tabs defaultValue="departments" className="w-full space-y-6">
-        <TabsList className="flex w-full max-w-[720px] border-b border-border bg-transparent p-0 rounded-none h-12 gap-6 overflow-x-auto">
-          <TabsTrigger
-            value="departments"
-            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
-          >
-            <Building2 className="h-4 w-4" /> Departments
-          </TabsTrigger>
-          <TabsTrigger
-            value="teams"
-            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
-          >
-            <Users className="h-4 w-4" /> Teams
-          </TabsTrigger>
-          <TabsTrigger
-            value="users"
-            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
-          >
-            <UserPlus className="h-4 w-4" /> Users
-          </TabsTrigger>
-          <TabsTrigger
-            value="task-templates"
-            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
-          >
-            <Repeat className="h-4 w-4" /> Task Templates
-          </TabsTrigger>
-          <TabsTrigger
-            value="reports"
-            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
-          >
-            <BarChart3 className="h-4 w-4" /> Reports
-          </TabsTrigger>
-        </TabsList>
+      {/* Org Pulse — one-glance health check */}
+      <OrgPulseStrip onViewReports={() => navigate("/super-admin/reports")} />
 
-        <TabsContent value="departments">
-          <DepartmentsTab />
-        </TabsContent>
-        <TabsContent value="teams">
-          <TeamsTab />
-        </TabsContent>
-        <TabsContent value="users">
-          <UsersTab />
-        </TabsContent>
-        <TabsContent value="task-templates">
-          <TaskTemplatesTab />
-        </TabsContent>
-        <TabsContent value="reports">
-          <ReportsTab />
-        </TabsContent>
-      </Tabs>
+      <TeamCommandCenter />
     </div>
   )
 }

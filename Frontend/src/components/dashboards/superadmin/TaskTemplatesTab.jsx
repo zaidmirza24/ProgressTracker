@@ -6,13 +6,150 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Repeat, Plus, Pencil, Trash2 } from "lucide-react"
+import { Repeat, Plus, Pencil, Trash2, Search, X, Users } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import useTaskTemplatesStore from "../../../store/useTaskTemplatesStore"
+import PersonAvatar from "@/components/ui/person-avatar"
+
+// Searchable, filterable multi-select for hand-picking individual employees on an
+// "employees"-scoped template. Selected people surface as removable chips up top so
+// the admin can see exactly who's targeted without scrolling the list.
+const EmployeePicker = ({ employees, departments, selected, onChange }) => {
+  const [search, setSearch] = useState("")
+  const [deptFilter, setDeptFilter] = useState("all")
+
+  const filtered = employees.filter(e => {
+    const q = search.trim().toLowerCase()
+    const matchesSearch = !q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)
+    const matchesDept = deptFilter === "all" || e.department?._id === deptFilter
+    return matchesSearch && matchesDept
+  })
+
+  const toggle = (id) => {
+    onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
+  }
+
+  const selectAllShown = () => {
+    onChange(Array.from(new Set([...selected, ...filtered.map(e => e._id)])))
+  }
+
+  const clearShown = () => {
+    const shownIds = new Set(filtered.map(e => e._id))
+    onChange(selected.filter(id => !shownIds.has(id)))
+  }
+
+  const selectedEmployees = employees.filter(e => selected.includes(e._id))
+
+  return (
+    <div className="space-y-2">
+      {selectedEmployees.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 rounded-lg border border-primary/20 bg-primary/5 p-2">
+          {selectedEmployees.map(e => (
+            <span
+              key={e._id}
+              className="flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 text-primary text-[11px] font-semibold pl-2 pr-1 py-0.5"
+            >
+              {e.name}
+              <button
+                type="button"
+                onClick={() => toggle(e._id)}
+                className="rounded-full hover:bg-primary/25 p-0.5"
+                aria-label={`Remove ${e.name}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search employees by name or email..."
+          className="pl-8 h-9 text-xs"
+        />
+      </div>
+
+      {departments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setDeptFilter("all")}
+            className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border transition-colors ${
+              deptFilter === "all"
+                ? "bg-primary/15 border-primary/40 text-primary"
+                : "border-border/40 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+            }`}
+          >
+            All
+          </button>
+          {departments.map(d => (
+            <button
+              key={d._id}
+              type="button"
+              onClick={() => setDeptFilter(d._id)}
+              className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full border transition-colors ${
+                deptFilter === d._id
+                  ? "bg-primary/15 border-primary/40 text-primary"
+                  : "border-border/40 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+              }`}
+            >
+              {d.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-[10px] font-bold uppercase text-muted-foreground">{selected.length} selected</span>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={selectAllShown} className="text-[10px] font-bold uppercase text-primary hover:underline">
+            Select shown
+          </button>
+          <button type="button" onClick={clearShown} className="text-[10px] font-bold uppercase text-muted-foreground hover:text-destructive hover:underline">
+            Clear shown
+          </button>
+        </div>
+      </div>
+
+      <div className="border border-border/40 rounded-lg max-h-48 overflow-y-auto bg-background/25 divide-y divide-border/30">
+        {filtered.length === 0 ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">No employees match your search.</div>
+        ) : (
+          filtered.map(e => {
+            const isChecked = selected.includes(e._id)
+            return (
+              <label
+                key={e._id}
+                className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/30 transition-colors ${isChecked ? "bg-primary/5" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggle(e._id)}
+                  className="rounded border-input text-primary focus:ring-primary h-3.5 w-3.5 bg-transparent shrink-0"
+                />
+                <PersonAvatar name={e.name} seed={e._id} fallback="EM" className="h-7 w-7 text-[10px]" />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold text-foreground/90 truncate">{e.name}</span>
+                  <span className="text-[10px] text-muted-foreground truncate">{e.department?.name || "No department"}</span>
+                </div>
+              </label>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
 
 const TaskTemplatesTab = () => {
   const templates = useTaskTemplatesStore(s => s.templates)
   const departments = useTaskTemplatesStore(s => s.departments)
+  const employees = useTaskTemplatesStore(s => s.employees)
   const loading = useTaskTemplatesStore(s => s.loading)
   const fetchTemplates = useTaskTemplatesStore(s => s.fetchTemplates)
   const createTemplate = useTaskTemplatesStore(s => s.createTemplate)
@@ -27,7 +164,8 @@ const TaskTemplatesTab = () => {
     priority: "medium",
     estimatedHours: 1,
     scope: "global",
-    departments: []
+    departments: [],
+    employees: []
   })
   const [saving, setSaving] = useState(false)
 
@@ -41,7 +179,8 @@ const TaskTemplatesTab = () => {
       priority: "medium",
       estimatedHours: 1,
       scope: "global",
-      departments: []
+      departments: [],
+      employees: []
     })
     setModal("create")
   }
@@ -54,7 +193,8 @@ const TaskTemplatesTab = () => {
       priority: tpl.priority || "medium",
       estimatedHours: tpl.estimatedHours || 1,
       scope: tpl.scope || "global",
-      departments: tpl.departments?.map(d => d._id) || []
+      departments: tpl.departments?.map(d => d._id) || [],
+      employees: tpl.employees?.map(e => e._id) || []
     })
     setModal(tpl)
   }
@@ -63,6 +203,10 @@ const TaskTemplatesTab = () => {
     e.preventDefault()
     if (form.scope === "department" && form.departments.length === 0) {
       alert("Please select at least one department.")
+      return
+    }
+    if (form.scope === "employees" && form.employees.length === 0) {
+      alert("Please select at least one employee.")
       return
     }
     setSaving(true)
@@ -128,7 +272,7 @@ const TaskTemplatesTab = () => {
             <div className="space-y-1">
               <h4 className="font-bold text-foreground">No recurring templates</h4>
               <p className="text-xs text-muted-foreground max-w-[280px] leading-relaxed">
-                Click "Add Template" to configure global or department-specific recurring tasks.
+                Click "Add Template" to configure recurring tasks for everyone, a department, or hand-picked employees.
               </p>
             </div>
           </div>
@@ -155,9 +299,18 @@ const TaskTemplatesTab = () => {
                     {t.description || "No description provided."}
                   </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border/40 pt-2 text-[11px] text-muted-foreground font-semibold uppercase">
-                    <div>Scope: <span className="text-foreground font-bold">{t.scope}</span></div>
+                    <div>Scope: <span className="text-foreground font-bold">{t.scope === "employees" ? "employees" : t.scope}</span></div>
                     {t.scope === "department" && (
                       <div className="text-violet-400">Depts: <span className="font-bold text-violet-400">{t.departments?.map(d => d.name).join(", ") || "—"}</span></div>
+                    )}
+                    {t.scope === "employees" && (
+                      <div className="text-violet-400 w-full flex items-center gap-1">
+                        <Users className="h-3 w-3 shrink-0" />
+                        <span className="font-bold text-violet-400 normal-case tracking-normal">
+                          {t.employees?.slice(0, 3).map(e => e.name).join(", ") || "—"}
+                          {t.employees?.length > 3 && ` +${t.employees.length - 3} more`}
+                        </span>
+                      </div>
                     )}
                     <div>Est: <span className="text-foreground font-bold">{t.estimatedHours}h</span></div>
                   </div>
@@ -178,7 +331,7 @@ const TaskTemplatesTab = () => {
 
       <Dialog open={modal !== null} onOpenChange={() => setModal(null)}>
         {modal && (
-          <DialogContent className="max-w-md bg-card/95 backdrop-blur shadow-2xl border-border/50">
+          <DialogContent className="max-w-md bg-card/95 backdrop-blur shadow-2xl border-border/50 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold tracking-tight">
                 {modal === "create" ? "Create Task Template" : "Edit Task Template"}
@@ -245,6 +398,7 @@ const TaskTemplatesTab = () => {
                   >
                     <option value="global" className="bg-card text-foreground">Global (All Employees)</option>
                     <option value="department" className="bg-card text-foreground">Department Specific</option>
+                    <option value="employees" className="bg-card text-foreground">Specific Employees</option>
                   </select>
                 </div>
               </div>
@@ -275,6 +429,21 @@ const TaskTemplatesTab = () => {
                   </div>
                   {form.departments.length === 0 && (
                     <p className="text-[10px] text-destructive font-medium">* Select at least one department</p>
+                  )}
+                </div>
+              )}
+
+              {form.scope === "employees" && (
+                <div className="space-y-1.5">
+                  <Label className="text-foreground/80 font-medium">Target Employees *</Label>
+                  <EmployeePicker
+                    employees={employees}
+                    departments={departments}
+                    selected={form.employees}
+                    onChange={ids => setForm(f => ({ ...f, employees: ids }))}
+                  />
+                  {form.employees.length === 0 && (
+                    <p className="text-[10px] text-destructive font-medium">* Select at least one employee</p>
                   )}
                 </div>
               )}

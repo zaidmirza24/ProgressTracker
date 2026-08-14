@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { Clock, AlertCircle, Calendar } from "lucide-react"
 import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
 import { formatTrackedTime, formatOverrun } from "../../../lib/taskFormatters"
@@ -128,9 +129,7 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         <div className="flex items-center gap-1.5">
-                          <div className="h-5 w-5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[9px] font-bold flex items-center justify-center">
-                            {t.assignedTo?.name ? t.assignedTo.name[0].toUpperCase() : "—"}
-                          </div>
+                          <PersonAvatar name={t.assignedTo?.name} seed={t.assignedTo?._id} fallback="—" className="h-5 w-5 text-[9px]" />
                           <span>{t.assignedTo?.name || "—"}</span>
                         </div>
                       </TableCell>

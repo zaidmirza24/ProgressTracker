@@ -6,18 +6,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CATEGORY_PRESETS } from "../../../lib/taskConstants"
+import { CategorySelect, PrioritySelect, HoursAndDueDateRow } from "../../tasks/TaskFormFields"
 import { getLocalDateString } from "../../../lib/taskFormatters"
 import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
 
-// Employee's self-assigned create-task dialog, relocated as-is (not yet unified with
-// Manager's version — that's a later phase). No assignee select (self-assigned), and
-// no "advanced settings" toggle — simpler than Manager's form. `submitting` is the
-// SAME shared flag the shell's useTaskStatusMutation instance uses for the status
-// stepper — original code used one boolean for both, so it's passed down rather than
-// made locally independent. `createOpen` is lifted to the shell (its button opens
-// this modal); `taskForm`/`customCategoryActive` stay local — nothing else reads them.
+// Employee's self-assigned create-task dialog. Shares its Category/Priority/
+// Hours+Due fields with Manager's version via ../../tasks/TaskFormFields. No assignee
+// select (self-assigned), and no "advanced settings" toggle — simpler than Manager's
+// form. `submitting` is the SAME shared flag the shell's useTaskStatusMutation
+// instance uses for the status stepper — original code used one boolean for both, so
+// it's passed down rather than made locally independent. `createOpen` is lifted to
+// the shell (its button opens this modal); `taskForm`/`customCategoryActive` stay
+// local — nothing else reads them.
 const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting }) => {
   const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
 
@@ -90,97 +90,32 @@ const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting 
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5 flex flex-col">
-              <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
-              <Select
-                value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
-                onValueChange={val => {
-                  if (val === "custom") {
-                    setCustomCategoryActive(true);
-                    setTaskForm(f => ({ ...f, category: "" }));
-                  } else {
-                    setCustomCategoryActive(false);
-                    setTaskForm(f => ({ ...f, category: val }));
-                  }
-                }}
-              >
-                <SelectTrigger className="h-10 rounded-lg">
-                  <SelectValue placeholder="Select Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORY_PRESETS.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                  <SelectItem value="custom">Custom...</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 flex flex-col">
-              <Label htmlFor="task-priority" className="mb-1 text-foreground/80 font-medium">Priority</Label>
-              <Select
-                value={taskForm.priority}
-                onValueChange={val => setTaskForm(f => ({ ...f, priority: val }))}
-              >
-                <SelectTrigger className="h-10 rounded-lg">
-                  <SelectValue placeholder="Select Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Low
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="medium">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-amber-500"></span> Medium
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="high">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-rose-500"></span> High
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <CategorySelect
+              category={taskForm.category}
+              customActive={customCategoryActive}
+              onSelectChange={val => {
+                if (val === "custom") {
+                  setCustomCategoryActive(true)
+                  setTaskForm(f => ({ ...f, category: "" }))
+                } else {
+                  setCustomCategoryActive(false)
+                  setTaskForm(f => ({ ...f, category: val }))
+                }
+              }}
+              onCustomTextChange={text => setTaskForm(f => ({ ...f, category: text }))}
+            />
+            <PrioritySelect
+              priority={taskForm.priority}
+              onChange={val => setTaskForm(f => ({ ...f, priority: val }))}
+            />
           </div>
 
-          {customCategoryActive && (
-            <div className="space-y-1.5 animate-in fade-in duration-200">
-              <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
-              <Input
-                id="task-cat-custom"
-                value={taskForm.category}
-                onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
-                placeholder="Enter custom category..."
-                className="h-10 rounded-lg"
-                required
-              />
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
-              <Input
-                type="number"
-                id="task-hours"
-                value={taskForm.estimatedHours}
-                onChange={e => setTaskForm(f => ({ ...f, estimatedHours: Number(e.target.value) }))}
-                min="0"
-                className="h-10 rounded-lg"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="task-due" className="text-foreground/80 font-medium">Due Date</Label>
-              <Input
-                type="date"
-                id="task-due"
-                value={taskForm.dueDate}
-                onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))}
-                className="h-10 rounded-lg text-foreground bg-transparent"
-              />
-            </div>
-          </div>
+          <HoursAndDueDateRow
+            estimatedHours={taskForm.estimatedHours}
+            dueDate={taskForm.dueDate}
+            onHoursChange={hours => setTaskForm(f => ({ ...f, estimatedHours: hours }))}
+            onDueDateChange={date => setTaskForm(f => ({ ...f, dueDate: date }))}
+          />
           <DialogFooter className="pt-4 gap-2">
             <Button type="button" variant="ghost" className="rounded-lg h-10" onClick={() => setCreateOpen(false)}>
               Cancel

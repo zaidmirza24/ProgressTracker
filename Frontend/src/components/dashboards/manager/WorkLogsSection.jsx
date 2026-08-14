@@ -1,8 +1,11 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { FileText, AlertCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import PersonAvatar from "@/components/ui/person-avatar"
+import { FileText, AlertCircle, ArrowUpRight } from "lucide-react"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
 // Filterable table of daily work logs. `logFilterEmployee` is UI-only, local here —
@@ -24,21 +27,28 @@ const WorkLogsSection = () => {
             <FileText className="h-5 w-5 text-primary" />
             Team Work Logs
             <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs ml-1 font-mono">
-              {filteredLogs.length} total
+              {Math.min(filteredLogs.length, 10)} of {filteredLogs.length}
             </Badge>
           </CardTitle>
-          <CardDescription>Daily productivity reports submitted by employees</CardDescription>
+          <CardDescription>Most recent submissions, all-time — not limited to today</CardDescription>
         </div>
-        <select
-          value={logFilterEmployee}
-          onChange={e => setLogFilterEmployee(e.target.value)}
-          className="h-10 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[200px]"
-        >
-          <option value="" className="bg-card text-foreground">— Filter Employee —</option>
-          {employees.filter(e => e.role === "employee").map(emp => (
-            <option key={emp._id} value={emp._id} className="bg-card text-foreground">{emp.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={logFilterEmployee}
+            onChange={e => setLogFilterEmployee(e.target.value)}
+            className="h-10 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[200px]"
+          >
+            <option value="" className="bg-card text-foreground">— Filter Employee —</option>
+            {employees.filter(e => e.role === "employee").map(emp => (
+              <option key={emp._id} value={emp._id} className="bg-card text-foreground">{emp.name}</option>
+            ))}
+          </select>
+          <Button asChild variant="outline" size="sm" className="h-10 rounded-lg text-xs font-semibold gap-1.5">
+            <Link to="/work-logs">
+              View All <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="border border-border/50 rounded-xl overflow-hidden bg-background/25">
@@ -66,9 +76,7 @@ const WorkLogsSection = () => {
                 <TableRow key={log._id} className="hover:bg-muted/30 transition-colors">
                   <TableCell className="font-medium text-sm">
                     <div className="flex items-center gap-1.5">
-                      <div className="h-5 w-5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[9px] font-bold flex items-center justify-center">
-                        {log.employee?.name ? log.employee.name[0].toUpperCase() : "E"}
-                      </div>
+                      <PersonAvatar name={log.employee?.name} seed={log.employee?._id} fallback="E" className="h-5 w-5 text-[9px]" />
                       <span>{log.employee?.name}</span>
                     </div>
                   </TableCell>

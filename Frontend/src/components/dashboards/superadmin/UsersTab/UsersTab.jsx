@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { UserPlus, Pencil, AlertCircle, Mail, Plus } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getInitials } from "../../../../lib/taskFormatters"
+import PersonAvatar from "@/components/ui/person-avatar"
 import useOrgStore from "../../../../store/useOrgStore"
 import OnboardingWizard from "./OnboardingWizard"
 import { ROLE_VARIANTS, ROLE_LABELS } from "./roleConstants"
@@ -144,14 +144,11 @@ const UsersTab = () => {
                 </TableRow>
               ) : (
                 users.map(u => {
-                  const initials = getInitials(u.name, "US")
                   return (
                     <TableRow key={u._id} className="hover:bg-muted/30 transition-colors">
                       <TableCell className="font-semibold text-sm">
                         <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-full bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold flex items-center justify-center">
-                            {initials}
-                          </div>
+                          <PersonAvatar name={u.name} seed={u._id} fallback="US" className="h-6 w-6 text-[9px]" />
                           <span>{u.name}</span>
                         </div>
                       </TableCell>
@@ -315,13 +312,10 @@ const UsersTab = () => {
                           <SelectContent>
                             <SelectItem value="none">— None —</SelectItem>
                             {managers.map(m => {
-                              const initials = getInitials(m.name, "M")
                               return (
                                 <SelectItem key={m._id} value={m._id}>
                                   <span className="flex items-center gap-2">
-                                    <span className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold flex items-center justify-center">
-                                      {initials}
-                                    </span>
+                                    <PersonAvatar name={m.name} seed={m._id} fallback="M" className="h-4 w-4 text-[8px]" />
                                     {m.name}
                                   </span>
                                 </SelectItem>

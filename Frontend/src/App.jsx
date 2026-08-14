@@ -8,10 +8,14 @@ import Layout from "./components/Layout"
 import ProtectedRoute from "./components/ProtectedRoute"
 import Login from "./pages/Login"
 import SuperAdminDashboard from "./pages/dashboards/SuperAdminDashboard"
+import AdminReportsPage from "./pages/dashboards/AdminReportsPage"
+import TeamTasksPage from "./pages/dashboards/TeamTasksPage"
+import OrganizationPage from "./pages/dashboards/OrganizationPage"
 import ManagerDashboard from "./pages/dashboards/ManagerDashboard"
 import EmployeeDashboard from "./pages/dashboards/EmployeeDashboard"
 import Unauthorized from "./pages/dashboards/Unauthorized"
 import WorkLogs from "./pages/WorkLogs"
+import MyProgress from "./pages/MyProgress"
 
 // HomeRedirect routes authenticated users to their correct dashboard
 const HomeRedirect = () => {
@@ -49,6 +53,24 @@ function App() {
             />
             
             <Route
+              path="/super-admin/reports"
+              element={
+                <ProtectedRoute allowedRoles={["super_admin"]}>
+                  <AdminReportsPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/super-admin/organization"
+              element={
+                <ProtectedRoute allowedRoles={["super_admin"]}>
+                  <OrganizationPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/manager"
               element={
                 <ProtectedRoute allowedRoles={["manager"]}>
@@ -58,10 +80,28 @@ function App() {
             />
             
             <Route
+              path="/team-tasks"
+              element={
+                <ProtectedRoute allowedRoles={["manager", "super_admin"]}>
+                  <TeamTasksPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/employee"
               element={
                 <ProtectedRoute allowedRoles={["employee"]}>
                   <EmployeeDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/my-progress"
+              element={
+                <ProtectedRoute allowedRoles={["employee"]}>
+                  <MyProgress />
                 </ProtectedRoute>
               }
             />

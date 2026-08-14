@@ -19,7 +19,8 @@ const DailyTasksSection = ({ setDetailTask }) => {
   }
 
   const dailyTasks = tasks.filter(t => t.isDaily)
-  const carryForward = dailyTasks.filter(t => !["Completed"].includes(t.status))
+  const carriedForward = dailyTasks.filter(t => t.isCarryForward)
+  const newToday = dailyTasks.filter(t => !t.isCarryForward)
   if (dailyTasks.length === 0) return null
 
   return (
@@ -30,12 +31,19 @@ const DailyTasksSection = ({ setDetailTask }) => {
           <h3 className="text-sm font-bold uppercase tracking-widest text-foreground/80">Today's Daily Tasks</h3>
           <Badge variant="outline" className="text-[10px] font-mono rounded-lg h-5">{dailyTasks.length}</Badge>
         </div>
-        {carryForward.length > 0 && (
-          <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-400">
-            <ArrowRightCircle className="h-3.5 w-3.5" />
-            {carryForward.length} pending / carry-forward
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {newToday.length > 0 && (
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              {newToday.length} new today
+            </span>
+          )}
+          {carriedForward.length > 0 && (
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-400">
+              <ArrowRightCircle className="h-3.5 w-3.5" />
+              {carriedForward.length} carried forward
+            </span>
+          )}
+        </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {dailyTasks.map(t => {
@@ -70,6 +78,11 @@ const DailyTasksSection = ({ setDetailTask }) => {
                     <Badge variant="violet" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase">
                       <Repeat className="h-2.5 w-2.5 mr-0.5" />Daily
                     </Badge>
+                    {t.isCarryForward && (
+                      <Badge variant="outline" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase text-amber-400 border-amber-400/40">
+                        Carried
+                      </Badge>
+                    )}
                     {t.totalTrackedSeconds > 0 && (
                       <span className="text-[10px] text-muted-foreground font-medium">
                         {formatTrackedTime(t.totalTrackedSeconds)} tracked

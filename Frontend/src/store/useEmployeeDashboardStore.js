@@ -11,6 +11,7 @@ const useEmployeeDashboardStore = create((set, get) => ({
   tasks: [],
   todayHours: 0,
   loading: true,
+  myReport: null,
 
   // Supports both a direct value and a functional updater, like useState's setter,
   // so useTaskStatusMutation's `setTasks(prev => prev.map(...))` calls work unchanged.
@@ -39,6 +40,19 @@ const useEmployeeDashboardStore = create((set, get) => ({
   provisionAndLoad: async () => {
     await axios.get(`${API_BASE}/api/tasks/daily`).catch(() => {}) // idempotent, non-blocking on failure
     await get().loadTasks()
+  },
+
+  // Personal progress signals (completion rate, estimation accuracy, pattern flag,
+  // pending backlog) — scoped to just this employee server-side. Loaded separately,
+  // non-blocking, so a slow report call never delays the task list/timer UI.
+  loadMyReport: async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/tasks/report`)
+      const mine = res.data.employeeReport?.[0] ?? null
+      set({ myReport: mine })
+    } catch (err) {
+      console.error("Error loading personal progress report:", err)
+    }
   }
 }))
 

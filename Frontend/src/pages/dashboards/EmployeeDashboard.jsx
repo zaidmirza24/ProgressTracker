@@ -11,10 +11,12 @@ import { formatTime } from "../../lib/taskFormatters"
 import { useTaskStatusMutation } from "../../hooks/useTaskStatusMutation"
 import useEmployeeDashboardStore from "../../store/useEmployeeDashboardStore"
 import DailyTasksSection from "../../components/dashboards/employee/DailyTasksSection"
+import MyProgressSection from "../../components/dashboards/employee/MyProgressSection"
+import NeedsAttentionStrip from "../../components/dashboards/employee/NeedsAttentionStrip"
 import TaskListView from "../../components/dashboards/employee/TaskListView"
 import TaskKanbanBoard from "../../components/dashboards/employee/TaskKanbanBoard"
 import CreateTaskModal from "../../components/dashboards/employee/CreateTaskModal"
-import TaskDetailModal from "../../components/tasks/TaskDetailModal"
+import EmployeeTaskDetailModal from "../../components/tasks/EmployeeTaskDetailModal"
 
 const EmployeeDashboard = () => {
   const { user } = useAuth()
@@ -26,6 +28,7 @@ const EmployeeDashboard = () => {
   const loading = useEmployeeDashboardStore(s => s.loading)
   const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
   const provisionAndLoad = useEmployeeDashboardStore(s => s.provisionAndLoad)
+  const loadMyReport = useEmployeeDashboardStore(s => s.loadMyReport)
 
   const [detailTask, setDetailTask] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -44,8 +47,10 @@ const EmployeeDashboard = () => {
   })
 
   // One-time setup on mount: provision today's daily tasks, then load the list.
+  // Personal progress is loaded separately, non-blocking, alongside it.
   useEffect(() => {
     provisionAndLoad()
+    loadMyReport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -164,6 +169,9 @@ const EmployeeDashboard = () => {
         </Button>
       </div>
 
+      {/* Needs Attention — overdue / over-estimate tasks, links down into My Tasks */}
+      <NeedsAttentionStrip />
+
       {/* Metrics Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/50 card-hover relative overflow-hidden group">
@@ -174,7 +182,7 @@ const EmployeeDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold tracking-tight">{tasks.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Pending start or execution</p>
+            <p className="text-xs text-muted-foreground mt-1">All-time · every task ever assigned to you</p>
           </CardContent>
         </Card>
 
@@ -202,7 +210,7 @@ const EmployeeDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold tracking-tight">{completedCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">Marked completed or approved</p>
+            <p className="text-xs text-muted-foreground mt-1">All-time · marked completed or approved</p>
           </CardContent>
         </Card>
 
@@ -223,7 +231,7 @@ const EmployeeDashboard = () => {
       <DailyTasksSection setDetailTask={setDetailTask} />
 
       {/* Task List */}
-      <Card className="border-border/40 shadow-xl bg-card/40 backdrop-blur-sm">
+      <Card id="my-tasks-section" className="border-border/40 shadow-xl bg-card/40 backdrop-blur-sm">
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <CardTitle className="text-xl font-bold">My Assigned Tasks</CardTitle>
@@ -287,6 +295,9 @@ const EmployeeDashboard = () => {
         </CardContent>
       </Card>
 
+      {/* My Progress — personal history, all-time, employee-only visibility */}
+      <MyProgressSection />
+
       {/* Create Task Modal */}
       <CreateTaskModal
         createOpen={createOpen}
@@ -296,8 +307,7 @@ const EmployeeDashboard = () => {
       />
 
       {/* Task Detail Modal */}
-      <TaskDetailModal
-        role="employee"
+      <EmployeeTaskDetailModal
         detailTask={detailTask}
         setDetailTask={setDetailTask}
         handleStatusTransition={handleStatusTransition}

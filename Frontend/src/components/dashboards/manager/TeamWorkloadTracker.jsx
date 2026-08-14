@@ -2,8 +2,8 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { User, Plus, CheckCircle2, Calendar, AlertTriangle } from "lucide-react"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { getInitials } from "../../../lib/taskFormatters"
 import { getEmployeeCapacity } from "../../../lib/taskHelpers"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
@@ -33,7 +33,6 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
           const pendingCount = empTasks.filter(t => t.status === "Pending").length
           const inReview = empTasks.filter(t => t.status === "In Review").length
 
-          const initials = getInitials(emp.name, "EM")
           const { capacityHours, plannedHours, isOverCapacity } = getEmployeeCapacity(emp, tasks)
           const capacityPct = capacityHours > 0 ? Math.min(100, Math.round((plannedHours / capacityHours) * 100)) : 0
 
@@ -41,9 +40,7 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
             <Card key={emp._id} className="border-border/40 bg-card/45 backdrop-blur-sm shadow-lg overflow-hidden flex flex-col justify-between group hover:border-primary/20 transition-all duration-200">
               <CardHeader className="pb-3 border-b border-border/40 flex flex-row items-center justify-between space-y-0 gap-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold flex items-center justify-center shadow-inner">
-                    {initials}
-                  </div>
+                  <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-9 w-9 text-xs" />
                   <div className="flex flex-col">
                     <span className="font-bold text-sm text-foreground/90 leading-tight">{emp.name}</span>
                     <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">{emp.team?.name || "Employee"}</span>

@@ -8,15 +8,21 @@ import API_BASE from "../lib/api"
 const useTaskTemplatesStore = create((set, get) => ({
   templates: [],
   departments: [],
+  employees: [],
   loading: true,
 
   fetchTemplates: async () => {
     try {
-      const [tplRes, deptRes] = await Promise.all([
+      const [tplRes, deptRes, userRes] = await Promise.all([
         axios.get(`${API_BASE}/api/task-templates`),
-        axios.get(`${API_BASE}/api/departments`)
+        axios.get(`${API_BASE}/api/departments`),
+        axios.get(`${API_BASE}/api/users`)
       ])
-      set({ templates: tplRes.data.templates, departments: deptRes.data.departments })
+      set({
+        templates: tplRes.data.templates,
+        departments: deptRes.data.departments,
+        employees: userRes.data.users.filter(u => u.role === "employee")
+      })
     } catch (err) {
       console.error("Error loading task templates:", err)
     } finally {

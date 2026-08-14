@@ -1,6 +1,7 @@
 import { useTimer } from "../../../context/TimerContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { Calendar, Play, Pause, Square, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { PRIORITY_VARIANTS } from "../../../lib/taskConstants"
@@ -196,9 +197,7 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition 
                       {/* Metadata row */}
                       <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
                         <div className="flex items-center gap-1.5">
-                          <div className="h-4.5 w-4.5 rounded-full bg-muted flex items-center justify-center text-[8px] font-bold text-muted-foreground shrink-0 border border-border/40">
-                            {t.assignedBy?.name ? t.assignedBy.name[0].toUpperCase() : "M"}
-                          </div>
+                          <PersonAvatar name={t.assignedBy?.name} seed={t.assignedBy?._id} fallback="M" className="h-4.5 w-4.5 text-[8px]" />
                           <span className="truncate max-w-[80px]">
                             {selfCreated ? "Self" : (t.assignedBy?.name || "Manager")}
                           </span>

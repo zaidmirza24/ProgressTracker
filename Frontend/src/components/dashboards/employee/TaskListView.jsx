@@ -2,6 +2,7 @@ import { useTimer } from "../../../context/TimerContext"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { Clock, Calendar, Play, Pause, Square, AlertCircle, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
@@ -117,9 +118,7 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     <div className="flex items-center gap-1.5">
-                      <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                        {t.assignedBy?.name ? t.assignedBy.name[0].toUpperCase() : "M"}
-                      </div>
+                      <PersonAvatar name={t.assignedBy?.name} seed={t.assignedBy?._id} fallback="M" className="h-5 w-5 text-[10px]" />
                       <span>{selfCreated ? "Self-Assigned" : (t.assignedBy?.name || "Manager")}</span>
                     </div>
                   </TableCell>

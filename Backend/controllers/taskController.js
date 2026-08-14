@@ -288,7 +288,8 @@ export const ensureDailyTasks = asyncHandler(async (req, res) => {
     isActive: true,
     $or: [
       { scope: "global" },
-      { scope: "department", departments: user.department }
+      { scope: "department", departments: user.department },
+      { scope: "employees", employees: employee.id }
     ]
   }
   const templates = await TaskTemplate.find(templateFilter)
@@ -407,11 +408,43 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     trackedMap[sid] = (stoppedMap[sid] || 0) + (activeMap[sid] || 0)
   })
 
+  // ── 2b. Overdue is an absolute, always-current signal — computed from the full
+  //      active task set regardless of the report's date filter, so switching the
+  //      timeframe dropdown never changes what counts as overdue.
+  const overdueTasks = await Task.find({
+    isActive: true,
+    dueDate: { $lt: new Date() },
+    status: { $ne: "Completed" }
+  })
+    .select("assignedTo department priority")
+    .populate({ path: "assignedTo", select: "team" })
+    .lean()
+
+  const overdueByEmployee = {}
+  const overdueByDept = {}
+  const overdueByTeam = {}
+  const overdueByPriority = {}
+  overdueTasks.forEach(t => {
+    const empId = t.assignedTo?._id?.toString()
+    if (empId) overdueByEmployee[empId] = (overdueByEmployee[empId] || 0) + 1
+
+    const deptId = t.department?.toString() || "unassigned"
+    overdueByDept[deptId] = (overdueByDept[deptId] || 0) + 1
+
+    const teamId = t.assignedTo?.team?.toString() || "unassigned"
+    overdueByTeam[teamId] = (overdueByTeam[teamId] || 0) + 1
+
+    if (t.priority) overdueByPriority[t.priority] = (overdueByPriority[t.priority] || 0) + 1
+  })
+
   // ── 3. Fetch active employees — a manager sees only their direct reports;
-  //      super_admin sees the whole org (Locked Logic §12) ────────────────────
+  //      an employee sees only themselves; super_admin sees the whole org
+  //      (Locked Logic §12) ─────────────────────────────────────────────────
   const userFilter = { isActive: true, role: "employee" }
   if (req.user.role === "manager") {
     userFilter.manager = req.user.id
+  } else if (req.user.role === "employee") {
+    userFilter._id = req.user.id
   }
   const users = await User.find(userFilter)
     .populate("department", "name")
@@ -425,7 +458,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     const completed = uTasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = uTasks.filter(t => t.status === "In Progress").length
     const pending = uTasks.filter(t => t.status === "Pending").length
-    const overdue = uTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
+    const overdue = overdueByEmployee[u._id.toString()] || 0
     const totalTrackedSeconds = uTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const avgProgress = total > 0 ? Math.round(uTasks.reduce((acc, t) => acc + t.progressPercentage, 0) / total) : 0
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
@@ -578,7 +611,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     const total = d.tasks.length
     const completed = d.tasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = d.tasks.filter(t => t.status === "In Progress").length
-    const overdue = d.tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
+    const overdue = overdueByDept[d.deptId] || 0
     const totalTrackedSeconds = d.tasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
     const memberSet = new Set(d.tasks.map(t => t.assignedTo?._id?.toString()).filter(Boolean))
@@ -599,7 +632,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     const total = tTasks.length
     const completed = tTasks.filter(t => ["Completed"].includes(t.status)).length
     const inProgress = tTasks.filter(t => t.status === "In Progress").length
-    const overdue = tTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
+    const overdue = overdueByTeam[team.teamId] || 0
     const totalTrackedSeconds = tTasks.reduce((acc, t) => acc + (trackedMap[t._id.toString()] || 0), 0)
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
     return { teamId: team.teamId, name: team.teamName, total, completed, inProgress, overdue, totalTrackedSeconds, completionRate, memberCount: team.memberIds.length }
@@ -612,7 +645,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     completedTasks: allTasks.filter(t => ["Completed"].includes(t.status)).length,
     inProgressTasks: allTasks.filter(t => t.status === "In Progress").length,
     notStartedTasks: allTasks.filter(t => t.status === "Not Started").length,
-    overdueTasks: allTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length,
+    overdueTasks: overdueTasks.length,
     pendingTasks: allTasks.filter(t => t.status === "Pending").length,
     inReviewTasks: allTasks.filter(t => t.status === "In Review").length,
     totalTrackedSeconds: Object.values(trackedMap).reduce((a, b) => a + b, 0),
@@ -628,9 +661,16 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       priority: p,
       total: pTasks.length,
       completed: pTasks.filter(t => ["Completed"].includes(t.status)).length,
-      overdue: pTasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !["Completed"].includes(t.status)).length
+      overdue: overdueByPriority[p] || 0
     }
   })
+
+  // An employee caller only ever sees their own row — department/team/org-wide
+  // breakdowns stay manager/super_admin only, per "avoid showing employees
+  // unnecessary organizational-level analytics."
+  if (req.user.role === "employee") {
+    return res.json({ employeeReport })
+  }
 
   res.json({
     employeeReport,

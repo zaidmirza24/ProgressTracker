@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { UserPlus } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getInitials } from "../../../../lib/taskFormatters"
+import PersonAvatar from "@/components/ui/person-avatar"
 import useOrgStore from "../../../../store/useOrgStore"
 import { ROLE_LABELS } from "./roleConstants"
 
@@ -302,13 +302,10 @@ const OnboardingWizard = ({ onClose }) => {
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
                     {managers.map(m => {
-                      const initials = getInitials(m.name, "M")
                       return (
                         <SelectItem key={m._id} value={m._id}>
                           <span className="flex items-center gap-2">
-                            <span className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold flex items-center justify-center">
-                              {initials}
-                            </span>
+                            <PersonAvatar name={m.name} seed={m._id} fallback="M" className="h-4 w-4 text-[8px]" />
                             {m.name}
                           </span>
                         </SelectItem>

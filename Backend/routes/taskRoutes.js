@@ -9,7 +9,7 @@ router.use(authenticateJWT)
 
 router.get("/", getTasks)
 router.get("/daily", requireRole(["employee"]), ensureDailyTasks)
-router.get("/report", requireRole(["super_admin", "manager"]), getProgressReport)
+router.get("/report", requireRole(["super_admin", "manager", "employee"]), getProgressReport)
 router.post("/", requireRole(["manager", "super_admin", "employee"]), createTask)
 router.put("/:id/status", updateTaskStatus)
 router.post("/:id/comments", addComment)

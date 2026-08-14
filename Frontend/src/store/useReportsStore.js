@@ -8,7 +8,7 @@ const useReportsStore = create((set, get) => ({
   reports: null,
   loading: true,
   activeSubTab: "employees",
-  timeframe: "today",
+  timeframe: "week",
   startDate: "",
   endDate: "",
   selectedEmployee: null,

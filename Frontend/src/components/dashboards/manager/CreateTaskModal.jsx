@@ -8,17 +8,21 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AlertTriangle } from "lucide-react"
-import { CATEGORY_PRESETS } from "../../../lib/taskConstants"
-import { getLocalDateString, getInitials } from "../../../lib/taskFormatters"
+import { CategorySelect, PrioritySelect, HoursAndDueDateRow } from "../../tasks/TaskFormFields"
+import PersonAvatar from "@/components/ui/person-avatar"
+import { getLocalDateString } from "../../../lib/taskFormatters"
 import { getEmployeeCapacity } from "../../../lib/taskHelpers"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
-// Manager's create-task dialog, relocated as-is (not yet unified with Employee's
-// version — that's a later phase). `submitting` is the SAME shared flag the shell's
+// Manager's create-task dialog. Shares its Category/Priority/Hours+Due fields with
+// Employee's version via ../../tasks/TaskFormFields — the two forms still diverge on
+// state-lifting (this one lifts taskForm/createOpen to the shell so
+// TeamWorkloadTracker's "assign task to employee" action can open it pre-filled;
+// Employee's keeps its form state local, since nothing else opens it pre-filled) and
+// on fields only a manager needs (Assignee, Department, capacity warning, the
+// Advanced Settings toggle). `submitting` is the SAME shared flag the shell's
 // useTaskStatusMutation instance uses for approve/reject/review — original code used
 // one boolean for both, so it's passed down rather than made locally independent.
-// `taskForm`/`customCategoryActive`/`createOpen` are lifted to the shell since
-// TeamWorkloadTracker's "assign task to employee" action also opens this modal.
 // `showAdvancedTaskForm` stays local — no other component reads it.
 const CreateTaskModal = ({
   createOpen, setCreateOpen,
@@ -48,7 +52,7 @@ const CreateTaskModal = ({
     setSubmitting(true)
     try {
       await axios.post(`${API_BASE}/api/tasks`, taskForm)
-      await loadData(user?.id || user?._id)
+      await loadData(user?.id || user?._id, user?.role)
       setCreateOpen(false)
       setTaskForm({
         title: "", description: "", category: "General",
@@ -99,13 +103,10 @@ const CreateTaskModal = ({
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map(emp => {
-                    const initials = getInitials(emp.name, "EM")
                     return (
                       <SelectItem key={emp._id} value={emp._id}>
                         <span className="flex items-center gap-2">
-                          <span className="h-4 w-4 rounded-full bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold flex items-center justify-center">
-                            {initials}
-                          </span>
+                          <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-4 w-4 text-[8px]" />
                           {emp.name}
                         </span>
                       </SelectItem>
@@ -114,34 +115,10 @@ const CreateTaskModal = ({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 flex flex-col">
-              <Label htmlFor="task-priority" className="mb-1 text-foreground/80 font-medium">Priority</Label>
-              <Select
-                value={taskForm.priority}
-                onValueChange={val => setTaskForm(f => ({ ...f, priority: val }))}
-              >
-                <SelectTrigger className="h-10 rounded-lg">
-                  <SelectValue placeholder="Select Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Low
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="medium">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-amber-500"></span> Medium
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="high">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-rose-500"></span> High
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <PrioritySelect
+              priority={taskForm.priority}
+              onChange={val => setTaskForm(f => ({ ...f, priority: val }))}
+            />
           </div>
 
           <Button
@@ -168,31 +145,20 @@ const CreateTaskModal = ({
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5 flex flex-col">
-                  <Label htmlFor="task-cat" className="mb-1 text-foreground/80 font-medium">Category</Label>
-                  <Select
-                    value={customCategoryActive ? "custom" : (CATEGORY_PRESETS.includes(taskForm.category) ? taskForm.category : "General")}
-                    onValueChange={val => {
-                      if (val === "custom") {
-                        setCustomCategoryActive(true);
-                        setTaskForm(f => ({ ...f, category: "" }));
-                      } else {
-                        setCustomCategoryActive(false);
-                        setTaskForm(f => ({ ...f, category: val }));
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-10 rounded-lg">
-                      <SelectValue placeholder="Select Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORY_PRESETS.map(cat => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                      <SelectItem value="custom">Custom...</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <CategorySelect
+                  category={taskForm.category}
+                  customActive={customCategoryActive}
+                  onSelectChange={val => {
+                    if (val === "custom") {
+                      setCustomCategoryActive(true)
+                      setTaskForm(f => ({ ...f, category: "" }))
+                    } else {
+                      setCustomCategoryActive(false)
+                      setTaskForm(f => ({ ...f, category: val }))
+                    }
+                  }}
+                  onCustomTextChange={text => setTaskForm(f => ({ ...f, category: text }))}
+                />
                 <div className="space-y-1.5 flex flex-col">
                   <Label htmlFor="task-dept" className="mb-1 text-foreground/80 font-medium">Department</Label>
                   <Select
@@ -212,43 +178,12 @@ const CreateTaskModal = ({
                 </div>
               </div>
 
-              {customCategoryActive && (
-                <div className="space-y-1.5 animate-in fade-in duration-200">
-                  <Label htmlFor="task-cat-custom" className="text-foreground/80 font-medium">Custom Category Name *</Label>
-                  <Input
-                    id="task-cat-custom"
-                    value={taskForm.category}
-                    onChange={e => setTaskForm(f => ({ ...f, category: e.target.value }))}
-                    placeholder="Enter custom category..."
-                    className="h-10 rounded-lg"
-                    required
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-hours" className="text-foreground/80 font-medium">Estimated Hours</Label>
-                  <Input
-                    type="number"
-                    id="task-hours"
-                    value={taskForm.estimatedHours}
-                    onChange={e => setTaskForm(f => ({ ...f, estimatedHours: Number(e.target.value) }))}
-                    min="0"
-                    className="h-10 rounded-lg"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="task-due" className="text-foreground/80 font-medium">Due Date</Label>
-                  <Input
-                    type="date"
-                    id="task-due"
-                    value={taskForm.dueDate}
-                    onChange={e => setTaskForm(f => ({ ...f, dueDate: e.target.value }))}
-                    className="h-10 rounded-lg text-foreground bg-transparent"
-                  />
-                </div>
-              </div>
+              <HoursAndDueDateRow
+                estimatedHours={taskForm.estimatedHours}
+                dueDate={taskForm.dueDate}
+                onHoursChange={hours => setTaskForm(f => ({ ...f, estimatedHours: hours }))}
+                onDueDateChange={date => setTaskForm(f => ({ ...f, dueDate: date }))}
+              />
             </div>
           )}
 

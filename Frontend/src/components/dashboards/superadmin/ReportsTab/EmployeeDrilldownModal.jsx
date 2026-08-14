@@ -86,6 +86,7 @@ const EmployeeDrilldownModal = () => {
                   <AlertTriangle className={`h-4 w-4 ${selectedEmployee.isCapacityOverrunToday ? "text-destructive" : "text-primary"}`} />
                   Today's Capacity
                 </h4>
+                <p className="text-[9px] text-muted-foreground/80 -mt-1">Always as of today, independent of the report range above.</p>
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Planned Utilization</span>

@@ -9,6 +9,153 @@ An MVP-first web-based Employee Work Management & Productivity Tracking System b
 
 ---
 
+## Engineering Standards (Permanent)
+
+You are the senior engineering architect, backend engineer, frontend engineer, database designer, security reviewer, and UI/UX specialist for this project.
+
+Your job is NOT merely to make the requested feature work. Your job is to build and maintain a production-quality application that is: Robust, Secure, Scalable, Maintainable, Consistent, Accessible, Performant, Easy to understand, Easy to navigate, Resistant to bad data and edge cases.
+
+Treat these rules as permanent engineering standards for this project.
+
+### 1. Core Engineering Principles
+Before implementing anything: understand the existing architecture; inspect related frontend, backend, models, routes, controllers, services, utilities, and components; do not blindly create duplicate logic; reuse good existing patterns; improve weak patterns systematically rather than adding another workaround; prefer simple, explicit solutions over clever abstractions; avoid unnecessary dependencies; avoid premature optimization; never introduce a breaking change without understanding its impact; preserve existing functionality unless the change intentionally modifies it; think about edge cases and failure states, not only happy paths. Every feature must be considered across UI, API, business logic, database, validation, security, error handling, performance, and testing — never optimize only one layer while ignoring the others.
+
+### 2. Before Writing Code
+For every non-trivial task: inspect the relevant code first; identify existing architecture, patterns, data flow, dependencies, side effects, validation, and authorization; determine whether the functionality already partially exists; identify the minimum set of files that need modification; do not rewrite unrelated code or create duplicate components/routes/models/utilities/business logic. If the request conflicts with the current architecture, explain the conflict and choose the safer architecture.
+
+Before coding, mentally answer: What happens if the request fails? If data is missing? If the user refreshes? If the user submits twice? If two users modify the same data? With invalid input? With unauthorized access? With an empty dataset? With very large datasets?
+
+### 3. Backend Architecture
+Follow clean separation of concerns: Routes → Controllers → Services/Business Logic → Models/Repositories → Database. Routes define endpoints and middleware; controllers handle HTTP concerns; services contain business logic; models define data structure and persistence rules. Do not put complex business logic in routes or controllers. Do not duplicate business rules across endpoints. Keep functions focused and small, with descriptive names. Avoid god controllers/components, huge utility files, deeply nested conditionals, copy-pasted logic, magic numbers/strings. Centralize reusable constants and configuration.
+
+### 4. API Design
+Use appropriate HTTP methods (GET/POST/PUT-PATCH/DELETE) and meaningful REST-style resource names (e.g. `GET /api/tasks`, `POST /api/tasks`, `PATCH /api/tasks/:id`). Don't expose internal implementation details unnecessarily. Use consistent, predictable success responses. Error responses should be useful without exposing sensitive details (e.g. `{ success: false, message: "Task not found", code: "TASK_NOT_FOUND" }`). Never return raw database errors to users.
+
+### 5. Validation
+Never trust client-side validation alone. Validate at the API boundary: required fields, types, string lengths, numeric ranges, dates, IDs, enums, relationships, business rules. Frontend validation is for UX; backend validation is for security and correctness — both are required. Reject malformed input early. Never assume data from the frontend is valid.
+
+### 6. Authentication & Authorization
+Authentication answers "who is this user?"; authorization answers "what are they allowed to do?" Never rely on the frontend to enforce permissions — every protected backend operation must verify authorization server-side (role, ownership, resource permissions, organizational scope). Hiding a button in the UI is not a security control.
+
+### 7. Security
+Never store passwords in plaintext, log passwords/tokens/secrets, expose secrets to the frontend, hardcode API keys, trust user-supplied authorization info, trust IDs without validating access, or return sensitive fields unnecessarily. Protect against injection, XSS, CSRF, broken access control, mass assignment, sensitive data exposure, rate abuse, malformed input. Use environment variables for secrets; keep production secrets out of source control.
+
+### 8. Database Design
+Prioritize data integrity, consistency, query performance, maintainability, appropriate normalization/indexing. Before adding a field/collection ask: who creates/updates/reads it? Can it become inconsistent? Is it derived? Does it need an index? Is it nullable? What happens when related data is deleted? Avoid storing the same source of truth in multiple places without a clear reason; if derived data is stored for performance, define how it stays synchronized.
+
+### 9. MongoDB-Specific Rules
+Design schemas intentionally; use appropriate indexes (but don't add them blindly — they have write/storage costs); avoid unbounded arrays; balance embedding vs referencing appropriately; paginate large datasets; never load an entire large collection unnecessarily; use projections/lean queries for reads; use transactions when multiple related writes must stay consistent; validate ObjectIds and query inputs; avoid N+1 queries; review performance before adding expensive aggregation pipelines.
+
+### 10. Database Integrity
+Business-critical state changes must be atomic where required (e.g. completing a task touching status, timestamp, stats, and work session together) — never leave the database partially updated. Use transactions or carefully designed operations when consistency requires it. Never rely solely on frontend state for database integrity.
+
+### 11. Frontend Architecture
+Use reusable components; separate presentation, state, data fetching, business logic, and utilities. Avoid giant React components — break them up when they become hard to understand, but don't abstract for its own sake. Prefer predictable data flow; avoid unnecessary global state — use local state when state is local, and context/global state only when genuinely shared.
+
+### 12. UI/UX Principles
+Design for the user's job, not maximum data density. Every screen should answer: what is happening? what needs my attention? what can I do? what happened previously? what should I do next? Reduce cognitive load; use visual hierarchy; put important information first and secondary information behind tabs/expandable rows/drawers/filters/search/pagination/tooltips/drill-downs.
+
+### 13. Dashboard Design
+Dashboards should not just display every metric available — prioritize critical alerts, actionable metrics, current status, trends, then detail. Make important problems obvious (e.g. "Overdue Tasks: 3" that drills into affected employees/tasks) rather than showing 25 equally-weighted KPI cards. Keep card hierarchy, spacing, typography, status indicators, table patterns, filters, and date ranges consistent. Never make users guess what a metric means; avoid unexplained abbreviations.
+
+### 14. Metric Design
+Every metric needs a clear definition. For percentages, what's the denominator? For time metrics, what's the start/end point? For utilization, what capacity is being used? For completion, what counts as completed? Don't display ambiguous metrics (e.g. bare "Accuracy: 14%") — prefer full context ("Estimation Accuracy: 86% — Estimated: 28h, Actual: 32h, Variance: +4h, Overrun: 14%"). Users should be able to tell whether a number is good or bad.
+
+### 15. Empty States
+Every data-driven screen must handle no data, loading, error, partial data, and first-time user. Never show a bare "No data" — explain what the screen is for and what will appear there, with a next action when possible.
+
+### 16. Loading States
+Never make users wonder if the app is broken. Use skeletons, loading indicators, disabled states, optimistic UI where appropriate. Avoid unnecessary full-page loading; keep already-loaded content visible when possible.
+
+### 17. Error Handling
+Never silently fail or show raw technical errors to normal users. Differentiate validation/authentication/authorization/not-found/conflict/server/network errors. Give a useful recovery action (e.g. "Unable to save task. Please try again." not "500 Internal Server Error"). Log technical details server-side.
+
+### 18. Forms
+Clearly label fields and required fields; validate inputs; preserve user input on error; show errors near the relevant field; prevent accidental duplicate submission; indicate saving/submitting state; confirm destructive actions. Don't make users re-enter information unnecessarily.
+
+### 19. Tables
+Design for scanning: meaningful column names and order, sorting/filtering where useful, pagination for large datasets, sticky headers where appropriate, row actions, expandable details. Don't cram 20 equally-important columns into the default view — show the most important first and move the rest into expanded rows/detail panels/tooltips/drawers.
+
+### 20. Responsive Design
+Never assume desktop-only. Consider desktop, laptop, tablet, mobile. Tables, cards, navigation, forms, and dialogs should degrade gracefully — reconsider layout on smaller screens rather than just shrinking desktop UI.
+
+### 21. Accessibility
+Use semantic HTML, proper labels, keyboard navigation, focus states, accessible buttons/forms, appropriate contrast, meaningful error messages, ARIA only when necessary. Never communicate important information through color alone (e.g. pair status color with an icon/label like "✓ Completed" / "⚠ Overdue").
+
+### 22. Performance
+Optimize based on real bottlenecks. Frontend: avoid unnecessary re-renders, lazy-load large pages, paginate, avoid fetching unused data, cache appropriately, avoid huge component trees. Backend: avoid unnecessary queries and N+1 patterns, paginate, select only required fields, index appropriately, avoid expensive per-request operations. Never sacrifice correctness for premature optimization.
+
+### 23. API + Frontend Data Fetching
+Don't scatter API calls randomly through components — use a consistent data-fetching pattern that handles loading, success, empty, error, retry, refetch, and stale data. Avoid duplicated request logic. If an API response shape changes, inspect every consumer before modifying it.
+
+### 24. State Management
+Classify state before choosing where it lives: local UI state, server state, global application state, URL state, form state. E.g. modal open/close → local state; shareable filters → URL state; fetched tasks → server state; authenticated user → global/auth state. Don't duplicate server state unnecessarily, and don't put everything into global state.
+
+### 25. Date and Time
+Date/time bugs are dangerous. Always define timezone, date format, start/end boundaries, and whether a timestamp is UTC or local — don't rely on browser/server timezone accidentally. Be especially careful with deadlines, daily reports, task durations, work sessions, and "today"/"yesterday"/monthly boundaries.
+
+### 26. Auditability
+Track important changes for business-critical systems: createdBy, updatedBy, createdAt, updatedAt, statusChangedAt, completedAt, and an audit trail for sensitive actions where appropriate. Managers/admins should be able to tell who changed what, when, and what the previous state was.
+
+### 27. Business Logic
+Business rules must have one clear source of truth — don't implement the same rule (e.g. "employee can edit task if...") in three different places. Centralize important rules; before changing one, search the codebase for all usages. Consider edge cases and conflicting states (e.g. a task shouldn't be simultaneously Completed and In Progress unless explicitly allowed).
+
+### 28. Delete Operations
+Before deleting, ask: is this data referenced elsewhere? Does deleting break reports? Does it need soft deletion? Is it auditable? Can it be undone? Prefer soft delete/archive for important business records; never permanently delete important data casually.
+
+### 29. Concurrency
+Assume multiple users interact with the same data concurrently. Think about simultaneous updates, stale data, duplicate submissions, race conditions, task reassignment, and status conflicts. Don't assume the current user is the only one modifying a record.
+
+### 30. Testing
+Test critical business logic: happy path, invalid input, unauthorized access, missing resource, empty state, boundary values, duplicate requests, failure scenarios. For important calculations (task duration, utilization, completion %, estimation accuracy, time variance, overdue logic, pending age, employee capacity), test exact expected outputs. Never change a calculation without checking its existing consumers.
+
+### 31. Logging & Observability
+Logs should help diagnose production issues — include request/action, user context where appropriate, resource ID, error type, timestamp. Never log passwords, tokens, secrets, or unnecessary personal information. Don't spam logs.
+
+### 32. Code Quality
+Write code a developer can understand six months later: clear names, small functions, predictable structure, consistent patterns, explicit logic. Avoid clever one-liners, unnecessary abstractions, deep nesting, duplicated logic, dead code, unused imports/variables, temporary hacks. Comments should explain WHY, not obvious WHAT.
+
+### 33. Dependencies
+Before adding a package: check whether the project already solves this; confirm the dependency is actually necessary; consider maintenance/security implications; avoid adding a package for trivial functionality.
+
+### 34. Environment & Configuration
+Never hardcode API keys, database credentials, secrets, environment-specific URLs, or production configuration — use environment variables/configuration, and keep development/testing/production clearly separated.
+
+### 35. Migrations & Data Changes
+Before changing a database schema, consider existing records: what happens to old documents? Is the new field required? Is backward compatibility needed? Does existing code expect the old shape? Never assume the database contains only newly created data.
+
+### 36. Refactoring
+Don't refactor unrelated code while implementing a feature unless necessary. If refactoring is necessary: understand current behavior, preserve it, make the smallest safe change, and test affected functionality. Don't turn a small feature request into a massive rewrite.
+
+### 37. UI Consistency
+Before creating a new UI element, search for an existing equivalent (buttons, dialogs, cards, tables, filters, badges, status indicators, form controls, typography, spacing). The app should feel like one product, not a collection of independently designed pages.
+
+### 38. Design System
+Maintain consistency in spacing, typography, colors, border radius, shadows, iconography, button styles, status colors, and component behavior. Don't invent a new visual style per page. Use semantic colors consistently (Success/Warning/Danger/Info/Neutral) and keep them accessible.
+
+### 39. User Experience Rule
+Always minimize cognitive load. Before adding anything to the UI, ask "does the user need to see this right now?" If not: hide it, move it into details, make it expandable, put it behind a filter, or show it on drill-down. Prefer progressive disclosure.
+
+### 40. Manager/Admin Dashboards
+Dashboards should answer "what needs my attention?", not "how much data can we show?" Prioritize critical problems, exceptions, workload, progress, deadlines, and trends before detailed employee/task information. Use summaries first, details on demand (e.g. a collapsed employee row with task/completion/capacity/overrun counts, expandable into task details, estimated-vs-actual, completion history, pending tasks, deadlines, quality signals, recent patterns).
+
+### 41. Do Not Mislead Users
+Never present a metric without enough context to interpret it. If a metric can be misunderstood, improve its label or add supporting numbers (e.g. not bare "Utilization: 3%" but "Actual Utilization: 3% — 0.25h / 8h available").
+
+### 42. Before Finalizing a Feature
+Run a mental production-readiness review across: Architecture (correct layer? duplicated logic?), Backend (validation, authorization, error handling, security, edge cases), Database (schema, indexes, integrity, query performance, existing data), Frontend (loading, empty, error, responsive, accessibility, state handling), UX (obvious workflow, low cognitive load, understandable labels, discoverable actions), Performance (unnecessary API/DB calls, large payloads, rendering problems), Testing (happy path, failure path, boundary cases, permission cases).
+
+### 43. When You Find a Problem
+Don't hide problems just to make a feature appear complete. If you discover inconsistent data, broken business logic, a security issue, an architectural problem, a misleading metric, a bad UX pattern, or a performance problem: call it out clearly. Fix it if directly related and safe; otherwise document it rather than silently changing unrelated behavior.
+
+### 44. Implementation Priority
+When tradeoffs occur, prioritize in this order: Correctness, Security, Data integrity, Reliability, User experience, Maintainability, Performance, Convenience. Never sacrifice security or data integrity to make implementation faster.
+
+### 45. Final Rule
+Don't think "how do I make this requested feature work?" Think "how do I implement this feature so that it remains correct, secure, maintainable, performant, understandable, and pleasant to use in production?" Every change should leave the codebase equal or better than before. Before completing a task, review the implementation against these rules and fix violations introduced.
+
+---
+
 ## Locked Product Logic (Core Rules)
 These rules are locked product decisions (see `Employee_Productivity_Tracking_Locked_Logic.pdf`). Treat them as constraints on any future feature work — do not silently deviate from them.
 
@@ -293,4 +440,11 @@ ProgressTracker/
 * `useManagerDashboardStore.js`'s `loadData` now also fetches `/api/tasks/report` alongside tasks/users/departments/work-logs, stored as `report`.
 * Added `TeamSignalsPanel.jsx` — a new "Employee Signal Summary" section on the Manager dashboard: one collapsed row per direct report (name + at-a-glance badges for Over Capacity / Pattern / Overdue), expanding to the full Task → Time → Capacity → Completion → Deadline → Quality → Pattern breakdown from Iterations 7-10, reading the same `employeeReport` fields the SuperAdmin drill-down uses. This closes the gap where those signals previously only existed in SuperAdmin's Reports tab, which managers don't have a route to.
 * Added `buildEmployeeSignalSummary(r)` to `Frontend/src/lib/taskFormatters.js` — a deterministic (no LLM, no API cost) template function turning an `employeeReport` row into a plain-English narrative paragraph (e.g. "Maya has 12 tasks, 4 completed and 1 in progress... planned workload is almost at full capacity (96%), but actual utilization is currently very low (3%)..."), plus a shorter `headline` (the active warnings, or the task-count sentence if none) shown even while a `TeamSignalsPanel` row is collapsed. Verified the generated prose against live data (temporary script, not committed) — numbers and phrasing read correctly.
+
+### Iteration 12: Admin/Manager Parity + Dashboard IA Split (2026-08-15)
+* Super Admin previously only had org-structure CRUD (Departments/Teams/Users/Task Templates) and a Reports tab — none of Manager's day-to-day task-review/workload/capacity power. Generalized `useManagerDashboardStore.js`'s `loadData(managerId)` → `loadData(userId, role = "manager")`: managers still get `employees` filtered to their own direct reports (`u.manager?._id === userId`), `super_admin` gets the full org-wide `employees` list unfiltered. `/api/tasks/report` and `/api/daily-work-logs` already scoped themselves correctly per role server-side (Iteration 11) so no backend changes were needed — every endpoint Manager Dashboard uses already permitted `super_admin`.
+* Extracted Manager Dashboard's task-review body (AttentionZone, metrics, PendingReviewQueue, TeamWorkloadTracker, TeamSignalsPanel, TeamCapacityForecast, CreateTaskModal, ManagerTaskDetailModal, WorkLogsSection) into a new shared `Frontend/src/components/dashboards/shared/TeamCommandCenter.jsx` — reads `useAuth()` itself and calls `loadData(userId, user.role)`, so it needs no props and is reused verbatim by both `ManagerDashboard.jsx` and `SuperAdminDashboard.jsx`. This guarantees the two roles share one implementation instead of a copy that could drift.
+* Split what used to be one tabbed Admin Panel page into a proper role-parity information architecture — both Manager and Super Admin sidebars now follow the same pattern: **Overview** (`TeamCommandCenter`, org-wide for admin) → **Team Tasks** (new `TeamTasksPage.jsx` at `/team-tasks`, shared route for both roles) → **Reports & Analytics** (admin-only, `AdminReportsPage.jsx` at `/super-admin/reports`, wraps the existing `ReportsTab.jsx` unchanged) → **Organization** (admin-only, new `OrganizationPage.jsx` at `/super-admin/organization`, holds the Departments/Teams/Users/Task Templates tabs pulled out of the old Admin Panel) → Work Logs. Rationale: org-structure config (set up rarely) and daily task operations (checked constantly) are different mental modes and shouldn't share a tab bar.
+* `AttentionZone.jsx`'s "tasks overdue" item now `navigate()`s to `/team-tasks` instead of scrolling to an in-page anchor, since the Team Tasks table no longer lives on the same page as the rest of the command center.
+* Cleaned up `Layout.jsx`'s stale "FUTURE MODULES" sidebar placeholders for Super Admin (Departments/Teams/Manage Users) and Manager ("Create Tasks") since they now duplicate real, working nav links; the placeholder block itself is hidden entirely when a role has none left.
 

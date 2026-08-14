@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { CalendarRange } from "lucide-react"
-import { getInitials } from "../../../lib/taskFormatters"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { getCapacityForecast } from "../../../lib/taskHelpers"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
@@ -39,8 +40,11 @@ const TeamCapacityForecast = () => {
         <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
           <CalendarRange className="h-5 w-5 text-primary" />
           Team Capacity Forecast
+          <Badge variant="outline" className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0 border-primary/30 text-primary/80">
+            Preview
+          </Badge>
         </h3>
-        <p className="text-sm text-muted-foreground">Planned load vs. capacity for the next {FORECAST_DAYS} days — spot overload before it happens</p>
+        <p className="text-sm text-muted-foreground">Forward-looking, planned load vs. capacity for the next {FORECAST_DAYS} days — spot overload before it happens</p>
       </div>
       <Card className="border-border/40 shadow-lg bg-card/40 backdrop-blur-sm overflow-hidden">
         <CardContent className="p-0">
@@ -64,9 +68,7 @@ const TeamCapacityForecast = () => {
                     <tr key={emp._id} className="border-b border-border/20 last:border-0">
                       <td className="p-3 sticky left-0 bg-card/95 backdrop-blur-sm">
                         <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-full bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold flex items-center justify-center shrink-0">
-                            {getInitials(emp.name, "EM")}
-                          </div>
+                          <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-6 w-6 text-[9px]" />
                           <span className="font-semibold text-foreground/90 whitespace-nowrap">{emp.name}</span>
                         </div>
                       </td>

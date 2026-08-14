@@ -5,7 +5,8 @@ import {
   ChevronDown, ChevronRight, ClipboardList, Clock, Gauge,
   CheckCircle2, CalendarClock, ShieldCheck, TrendingDown, AlertTriangle
 } from "lucide-react"
-import { getInitials, formatHours, buildEmployeeSignalSummary } from "../../../lib/taskFormatters"
+import PersonAvatar from "@/components/ui/person-avatar"
+import { formatHours, buildEmployeeSignalSummary } from "../../../lib/taskFormatters"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
 // Iteration 11: wires every signal from Iterations 7-10 (overrun alerts, V1 capacity,
@@ -61,9 +62,7 @@ const TeamSignalsPanel = () => {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
-                    <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
-                      {getInitials(emp.name, "EM")}
-                    </div>
+                    <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-7 w-7 text-[10px]" />
                     <span className="font-bold text-sm text-foreground/90 truncate">{emp.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">

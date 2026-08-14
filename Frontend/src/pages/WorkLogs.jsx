@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { Plus, FileText, Clock, ClipboardList, Loader2, Calendar, AlertCircle } from "lucide-react"
 
 const BLANK_FORM = {
@@ -257,9 +258,7 @@ const WorkLogs = () => {
                       {isManager && (
                         <TableCell className="font-bold text-sm">
                           <div className="flex items-center gap-1.5">
-                            <div className="h-5 w-5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[9px] font-bold flex items-center justify-center">
-                              {log.employee?.name ? log.employee.name[0].toUpperCase() : "E"}
-                            </div>
+                            <PersonAvatar name={log.employee?.name} seed={log.employee?._id} fallback="E" className="h-5 w-5 text-[9px]" />
                             <span>{log.employee?.name}</span>
                           </div>
                         </TableCell>

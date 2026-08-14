@@ -20,7 +20,11 @@ const useManagerDashboardStore = create((set) => ({
     tasks: typeof updater === "function" ? updater(state.tasks) : updater
   })),
 
-  loadData: async (managerId) => {
+  // `role` distinguishes a manager (scoped to their own direct reports) from a
+  // super_admin (org-wide) — both share this store so Manager and Admin dashboards
+  // reuse the exact same components. `/api/tasks/report` already scopes itself
+  // server-side the same way, so only the `employees` filter needs branching here.
+  loadData: async (userId, role = "manager") => {
     try {
       const [tRes, uRes, dRes, reportRes] = await Promise.all([
         axios.get(`${API_BASE}/api/tasks`),
@@ -30,8 +34,10 @@ const useManagerDashboardStore = create((set) => ({
         // detection) — server already scopes this to the manager's own subordinates.
         axios.get(`${API_BASE}/api/tasks/report`)
       ])
-      // Filter employees that report to this manager
-      const subordinates = uRes.data.users.filter(u => u.manager?._id === managerId)
+      // Managers see only their own direct reports; super_admin sees everyone org-wide
+      const subordinates = role === "manager"
+        ? uRes.data.users.filter(u => u.manager?._id === userId)
+        : uRes.data.users
       // Load today's work logs
       const logsRes = await axios.get(`${API_BASE}/api/daily-work-logs`)
       set({
