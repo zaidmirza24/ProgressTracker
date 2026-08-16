@@ -45,9 +45,37 @@ const performStopSession = async (session) => {
 // A task only reflects "In Progress" while its timer is actively running. Any time the timer
 // leaves the running state (pause, switch, stop) the task falls back to "Pending" so the
 // Pending-backlog signal stays accurate. Server-side only — matches the locked timer rules.
+// Starting or resuming a timer means work is demonstrably proceeding, so the task can't
+// still be blocked. Clearing it automatically avoids a stale "Blocked" badge sitting on
+// a task somebody is actively working on. Mutates in place — the caller saves.
+//
+// Used by BOTH timer entry points: startSession updates the task document directly,
+// while pause/resume/stop go through setTaskStatus. Putting this in only one of them
+// left the start path silently not unblocking.
+const clearBlockedIfSet = (task, changedBy) => {
+  if (!task.isBlocked) return false
+  task.history.push({
+    changes: [{ field: "isBlocked", from: "yes", to: "no" }],
+    changedBy,
+    comment: "Unblocked automatically — work resumed"
+  })
+  task.isBlocked = false
+  task.blockedReason = ""
+  task.blockedAt = null
+  task.blockedBy = null
+  return true
+}
+
 const setTaskStatus = async (taskId, toStatus, changedBy, comment) => {
   const task = await Task.findById(taskId)
-  if (!task || task.status === toStatus) return
+  if (!task) return
+
+  const unblocked = toStatus === "In Progress" && clearBlockedIfSet(task, changedBy)
+
+  if (task.status === toStatus) {
+    if (unblocked) await task.save()
+    return
+  }
   const fromStatus = task.status
   if (fromStatus !== "In Progress" && toStatus !== "In Progress") return
   task.status = toStatus
@@ -81,6 +109,16 @@ export const startSession = asyncHandler(async (req, res, next) => {
     return next(new AppError("taskId is required", 400))
   }
 
+  // Ownership check: an employee may only start a timer against their own task
+  // (never rely on the frontend to enforce this — see CLAUDE.md Authorization rule).
+  const targetTask = await Task.findById(taskId)
+  if (!targetTask || !targetTask.isActive) {
+    return next(new AppError("Task not found", 404))
+  }
+  if (targetTask.assignedTo.toString() !== req.user.id) {
+    return next(new AppError("You do not have permission to track time on this task", 403))
+  }
+
   // 1. Stop any currently active timer for this employee
   const activeSession = await WorkSession.findOne({
     employee: req.user.id,
@@ -100,13 +138,16 @@ export const startSession = asyncHandler(async (req, res, next) => {
     startedAt: new Date()
   })
 
-  // 3. Update task status to "In Progress" if it is Not Started or Pending
-  const task = await Task.findById(taskId)
-  if (task && ["Not Started", "Pending"].includes(task.status)) {
-    task.history.push({ fromStatus: task.status, toStatus: "In Progress", changedBy: req.user.id, comment: "Timer started" })
-    task.status = "In Progress"
-    task.progressPercentage = 50
-    await task.save()
+  // 3. Update task status to "In Progress" if it is Not Started or Pending, and clear
+  //     any block — starting the timer is proof the work can proceed.
+  const wasUnblocked = clearBlockedIfSet(targetTask, req.user.id)
+  if (["Not Started", "Pending"].includes(targetTask.status)) {
+    targetTask.history.push({ fromStatus: targetTask.status, toStatus: "In Progress", changedBy: req.user.id, comment: "Timer started" })
+    targetTask.status = "In Progress"
+    targetTask.progressPercentage = 50
+    await targetTask.save()
+  } else if (wasUnblocked) {
+    await targetTask.save()
   }
 
   const populatedSession = await WorkSession.findById(session._id)

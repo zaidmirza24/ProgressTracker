@@ -9,8 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Clock, Calendar, User, BarChart3, Send, Check } from "lucide-react"
-import { STATUS_VARIANTS } from "../../lib/taskConstants"
-import { formatTrackedTime, formatOverrun } from "../../lib/taskFormatters"
+import { STATUS_VARIANTS, formatStatus } from "../../lib/taskConstants"
+import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked, formatRework } from "../../lib/taskFormatters"
 import { getStepperSteps, normalizeForStepper } from "../../lib/stepper"
 
 // Shared skeleton behind both ManagerTaskDetailModal and EmployeeTaskDetailModal:
@@ -64,9 +64,16 @@ const TaskDetailModalCore = ({
           <DialogHeader>
             <div className="flex items-center justify-between pr-6 gap-4">
               <DialogTitle className="text-xl font-bold tracking-tight text-foreground">{detailTask.title}</DialogTitle>
-              <Badge variant={STATUS_VARIANTS[detailTask.status] || "default"} className="font-bold shrink-0">
-                {detailTask.status}
-              </Badge>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {detailTask.isCarryForward && (
+                  <Badge variant="outline" className="text-[9px] font-bold uppercase border-amber-500/30 text-amber-400 bg-amber-500/5">
+                    {formatCarryForwardDate(detailTask) || "Carried Over"}
+                  </Badge>
+                )}
+                <Badge variant={STATUS_VARIANTS[detailTask.status] || "default"} className="font-bold shrink-0">
+                  {detailTask.status}
+                </Badge>
+              </div>
             </div>
             <DialogDescription className="text-xs uppercase tracking-wider font-semibold text-primary">{detailTask.category}</DialogDescription>
           </DialogHeader>
@@ -153,6 +160,22 @@ const TaskDetailModalCore = ({
                 <BarChart3 className="h-4 w-4 text-primary" />
                 <span>Progress: <strong className="text-foreground">{detailTask.progressPercentage}%</strong></span>
               </div>
+              {formatRework(detailTask) && (
+                <div className="col-span-2 flex items-center gap-2">
+                  <Badge variant="outline" className="font-bold text-[11px] border-amber-500/40 text-amber-400">
+                    ↩ {formatRework(detailTask)}
+                  </Badge>
+                  <span className="text-muted-foreground">Returned for rework before — see the audit log.</span>
+                </div>
+              )}
+              {formatBlocked(detailTask) && (
+                <div className="col-span-2 flex items-center gap-2">
+                  <Badge variant="destructive" className="font-bold text-[11px]">
+                    ⛔ {formatBlocked(detailTask)}
+                  </Badge>
+                  <span className="text-muted-foreground">{detailTask.blockedReason}</span>
+                </div>
+              )}
               {formatOverrun(detailTask) && (
                 <div className="col-span-2 flex items-center gap-2">
                   <Badge variant="destructive" className="font-bold text-[11px]">
@@ -254,9 +277,9 @@ const TaskDetailModalCore = ({
 
                               <div className="bg-card/50 p-2.5 rounded-lg border border-border/20 pl-4 ml-1 space-y-1.5 shadow-sm">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold text-muted-foreground bg-muted/40 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{h.fromStatus}</span>
+                                  <span className="font-semibold text-muted-foreground bg-muted/40 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{formatStatus(h.fromStatus)}</span>
                                   <span className="text-muted-foreground/50 text-[10px]">➔</span>
-                                  <span className="font-bold text-primary bg-primary/10 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{h.toStatus}</span>
+                                  <span className="font-bold text-primary bg-primary/10 py-0.5 px-1.5 rounded text-[9px] uppercase tracking-wider">{formatStatus(h.toStatus)}</span>
                                 </div>
                                 {h.comment && (
                                   <p className="text-muted-foreground italic pl-1.5 text-[11px] border-l-2 border-primary/20 leading-relaxed">

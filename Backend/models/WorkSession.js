@@ -19,6 +19,13 @@ const WorkSessionSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+// Every timer action (start/pause/resume/stop) and the active-session check on
+// dashboard load queries by { employee, stoppedAt: null } — the hottest read path
+// on this model. Task-time rollups (attachTrackedSecondsToTasks, progress report)
+// query by { task, stoppedAt } in bulk. Both are worth a compound index.
+WorkSessionSchema.index({ employee: 1, stoppedAt: 1 })
+WorkSessionSchema.index({ task: 1, stoppedAt: 1 })
+
 const WorkSession = mongoose.model("WorkSession", WorkSessionSchema)
 
 export default WorkSession

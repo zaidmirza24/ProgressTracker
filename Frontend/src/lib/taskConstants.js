@@ -1,3 +1,23 @@
+// DISPLAY labels for the workflow states. The stored enum values are unchanged (and
+// must stay — config/workflow.js, isValidTransition and every query use them); this is
+// purely what the user reads.
+//
+// "Pending" is renamed to "Paused" because that is what the code actually does: the
+// timer controller sets this state on every pause/stop/switch. The locked doc's
+// "pending backlog" concept — work that is genuinely waiting on something — is now
+// carried by the separate `isBlocked` flag, so calling this state "Pending" alongside
+// a real "Blocked" state was actively confusing.
+export const STATUS_LABELS = {
+  "Not Started": "Not Started",
+  "In Progress": "In Progress",
+  "Pending": "Paused",
+  "In Review": "In Review",
+  "Completed": "Completed"
+}
+
+// Falls through unknown values (e.g. legacy statuses still present in task history).
+export const formatStatus = (status) => STATUS_LABELS[status] || status
+
 export const STATUS_VARIANTS = {
   "Not Started": "secondary",
   "In Progress": "violet",

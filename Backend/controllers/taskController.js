@@ -1,28 +1,27 @@
+import mongoose from "mongoose"
 import Task from "../models/Task.js"
 import User from "../models/User.js"
+import Department from "../models/Department.js"
 import WorkSession from "../models/WorkSession.js"
-import TaskTemplate from "../models/TaskTemplate.js"
 import { isValidTransition } from "../config/workflow.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
+import { provisionDailyTasksForEmployee } from "../services/dailyTaskService.js"
+import {
+  calculateSessionElapsedSeconds,
+  stopRunningSessionForTask,
+  stopActiveSessionForEmployee
+} from "../services/taskService.js"
+import {
+  getOrgSettings,
+  getAbsencesInRange,
+  getCapacityForDay,
+  workingDaysBetween,
+  isSameCalendarDay
+} from "../services/calendarService.js"
+import { buildScopeFilter, TASK_SCOPES } from "../services/taskScopeService.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-// Calculate elapsed seconds for a single in-progress work session
-const calculateSessionSeconds = (session) => {
-  if (!session) return 0
-  const events = session.events
-  if (events.length === 0) {
-    const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000
-    return Math.max(0, Math.floor(elapsed))
-  }
-  const lastEvent = events[events.length - 1]
-  if (lastEvent.type === "pause") {
-    return Math.floor(session.totalSeconds)
-  }
-  const elapsed = session.totalSeconds + (Date.now() - new Date(lastEvent.timestamp).getTime()) / 1000
-  return Math.max(0, Math.floor(elapsed))
-}
 
 // PERFORMANCE FIX: Batch-aggregate tracked seconds for multiple tasks in one DB query
 const attachTrackedSecondsToTasks = async (taskObjects) => {
@@ -42,12 +41,18 @@ const attachTrackedSecondsToTasks = async (taskObjects) => {
   sessionAgg.forEach(s => { stoppedMap[s._id.toString()] = s.totalStopped })
 
   const activeMap = {}
-  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionSeconds(s) })
+  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionElapsedSeconds(s) })
 
   return taskObjects.map(t => {
     const id = t._id.toString()
     const totalTrackedSeconds = (stoppedMap[id] || 0) + (activeMap[id] || 0)
-    return { ...t, totalTrackedSeconds, ...computeOverrunFields(t.estimatedHours, totalTrackedSeconds) }
+    return {
+      ...t,
+      totalTrackedSeconds,
+      // Derived from history already loaded on the document — no extra query.
+      reworkCount: getReworkCount(t),
+      ...computeOverrunFields(t.estimatedHours, totalTrackedSeconds)
+    }
   })
 }
 
@@ -56,10 +61,11 @@ const getTaskWithTime = async (task) => {
   const sessions = await WorkSession.find({ task: task._id })
   let totalTrackedSeconds = 0
   for (const s of sessions) {
-    totalTrackedSeconds += s.stoppedAt ? s.totalSeconds : calculateSessionSeconds(s)
+    totalTrackedSeconds += s.stoppedAt ? s.totalSeconds : calculateSessionElapsedSeconds(s)
   }
   const tObj = task.toObject ? task.toObject() : task
   tObj.totalTrackedSeconds = totalTrackedSeconds
+  tObj.reworkCount = getReworkCount(tObj)
   Object.assign(tObj, computeOverrunFields(tObj.estimatedHours, totalTrackedSeconds))
   return tObj
 }
@@ -81,17 +87,58 @@ const PATTERN_LOOKBACK = 5
 const PATTERN_MIN_SAMPLE = 3
 const PATTERN_THRESHOLD = 0.5
 
-const isSameCalendarDay = (a, b) =>
-  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+// Quality / rework (Locked Logic §9, §11). Derived entirely from task.history — no new
+// state is stored, so these numbers are available retroactively for every task already
+// in the database.
+//
+// Crucially, no role check is needed: employees have NO "In Review" transition in
+// WORKFLOW_RULES at all, so an "In Review" -> "In Progress" entry can only have been a
+// manager sending work back. That makes rework unambiguously identifiable from history.
+const QUALITY_MIN_SAMPLE = 3
+const QUALITY_THRESHOLD = 0.5
 
-// Days a task has been sitting in Pending, using the last transition into Pending
-// (Locked Logic §8 — track how long each task has sat pending). Falls back to
-// updatedAt if no matching history entry exists.
-const getPendingAgeDays = (task) => {
-  if (task.status !== "Pending") return null
-  const lastPendingEntry = [...(task.history || [])].reverse().find(h => h.toStatus === "Pending")
-  const since = lastPendingEntry ? new Date(lastPendingEntry.timestamp) : new Date(task.updatedAt)
-  return Math.max(0, (Date.now() - since.getTime()) / (1000 * 60 * 60 * 24))
+const getReworkCount = (task) =>
+  (task.history || []).filter(h => h.fromStatus === "In Review" && h.toStatus === "In Progress").length
+
+// Only review-gated work can have a first-pass rate. Daily and self-assigned tasks skip
+// review entirely by design, so including them would drown the denominator and report a
+// permanent ~100% for everyone.
+const wasEverReviewed = (task) =>
+  (task.history || []).some(h => h.toStatus === "In Review")
+
+// The feedback a manager gave when they last sent it back — the actionable part.
+const getLastReworkFeedback = (task) => {
+  const entry = [...(task.history || [])].reverse()
+    .find(h => h.fromStatus === "In Review" && h.toStatus === "In Progress")
+  return entry?.comment || ""
+}
+
+// How long a task has been BLOCKED, in working days. This is the metric Locked Logic §8
+// actually asked for ("track pending backlog, including how long each task has sat
+// pending") — the old pending-age metric measured time since the timer was paused,
+// which is mostly evenings and weekends, not waiting.
+const getBlockedAgeDays = (task, settings) => {
+  if (!task.isBlocked || !task.blockedAt) return null
+  const since = new Date(task.blockedAt)
+  if (!settings) return Math.max(0, (Date.now() - since.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.max(0, workingDaysBetween(since, new Date(), settings) - 1)
+}
+
+// Authorization scope for task-level actions (status updates, comments) — mirrors
+// getTasks' visibility filter: employees only their own tasks; managers their own
+// assigned/created tasks and their direct reports' tasks; super_admin unrestricted.
+// Prevents an authenticated user from acting on a task ID outside their scope.
+const hasTaskAccess = async (req, task) => {
+  if (req.user.role === "super_admin") return true
+  if (req.user.role === "employee") {
+    return task.assignedTo.toString() === req.user.id
+  }
+  if (req.user.role === "manager") {
+    if (task.assignedBy.toString() === req.user.id || task.assignedTo.toString() === req.user.id) return true
+    const assigneeIsSubordinate = await User.exists({ _id: task.assignedTo, manager: req.user.id })
+    return !!assigneeIsSubordinate
+  }
+  return false
 }
 
 // Map status → default progress %
@@ -107,22 +154,52 @@ const getProgressForStatus = (status) => {
 }
 
 // ─── GET /api/tasks ───────────────────────────────────────────────────────────
-export const getTasks = asyncHandler(async (req, res) => {
-  let filter = { isActive: true }
+// Query params (all optional, all additive — omitting them preserves the original
+// all-time behaviour so existing callers are unaffected):
+//   scope=today|week|all   see services/taskScopeService.js
+//   status=<status>        exact status match
+//   assignedTo=<id>        within the caller's existing visibility scope
+//   page, limit            pagination; only applied when `limit` is supplied
+export const getTasks = asyncHandler(async (req, res, next) => {
+  const { scope, status, assignedTo, page, limit } = req.query
+
+  // Role visibility and scope both need $or, which can't coexist as sibling keys —
+  // they're combined under $and.
+  const conditions = []
 
   if (req.user.role === "manager") {
     const subordinates = await User.find({ manager: req.user.id, isActive: true }).select("_id")
     const subordinateIds = subordinates.map(s => s._id)
-    filter.$or = [
-      { assignedBy: req.user.id },
-      { assignedTo: req.user.id },
-      { assignedTo: { $in: subordinateIds } }
-    ]
+    conditions.push({
+      $or: [
+        { assignedBy: req.user.id },
+        { assignedTo: req.user.id },
+        { assignedTo: { $in: subordinateIds } }
+      ]
+    })
   } else if (req.user.role === "employee") {
-    filter.assignedTo = req.user.id
+    conditions.push({ assignedTo: req.user.id })
   }
 
-  const tasks = await Task.find(filter)
+  if (scope && !TASK_SCOPES.includes(scope)) {
+    return next(new AppError(`scope must be one of: ${TASK_SCOPES.join(", ")}`, 400, "INVALID_SCOPE"))
+  }
+  const scopeFilter = buildScopeFilter(scope)
+  if (scopeFilter) conditions.push(scopeFilter)
+
+  if (status) conditions.push({ status })
+  // An explicit assignee narrows within the caller's scope — it never widens it, since
+  // the role condition above is ANDed alongside.
+  if (assignedTo) {
+    if (!mongoose.isValidObjectId(assignedTo)) {
+      return next(new AppError("Invalid assignedTo", 400, "INVALID_ASSIGNEE"))
+    }
+    conditions.push({ assignedTo })
+  }
+
+  const filter = { isActive: true, ...(conditions.length > 0 && { $and: conditions }) }
+
+  let query = Task.find(filter)
     .populate("assignedTo", "name email")
     .populate("assignedBy", "name email")
     .populate("department", "name")
@@ -130,10 +207,27 @@ export const getTasks = asyncHandler(async (req, res) => {
     .populate("history.changedBy", "name email role")
     .sort({ isDaily: -1, updatedAt: -1 }) // Daily tasks appear first
 
+  // Pagination is opt-in so callers that need the whole set (the manager dashboard's
+  // capacity and forecast maths) keep working untouched.
+  const parsedLimit = limit ? Math.min(Math.max(parseInt(limit, 10) || 0, 1), 200) : null
+  const parsedPage = Math.max(parseInt(page, 10) || 1, 1)
+  if (parsedLimit) {
+    query = query.skip((parsedPage - 1) * parsedLimit).limit(parsedLimit)
+  }
+
+  const [tasks, total] = await Promise.all([
+    query,
+    parsedLimit ? Task.countDocuments(filter) : Promise.resolve(null)
+  ])
+
   const taskPlainObjects = tasks.map(t => t.toObject())
   const tasksWithTime = await attachTrackedSecondsToTasks(taskPlainObjects)
 
-  res.json({ tasks: tasksWithTime })
+  res.json({
+    tasks: tasksWithTime,
+    scope: scope || "all",
+    ...(total !== null && { total, page: parsedPage, limit: parsedLimit })
+  })
 })
 
 // ─── POST /api/tasks ──────────────────────────────────────────────────────────
@@ -178,6 +272,10 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     return next(new AppError("Task not found", 404))
   }
 
+  if (!(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to update this task", 403))
+  }
+
   const isSelfAssigned = task.assignedBy.toString() === task.assignedTo.toString()
   const oldStatus = task.status
 
@@ -200,19 +298,13 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
     comment: comment?.trim() || "Status changed."
   })
 
-  // Handle active timer side-effects:
+  // Handle active timer side-effects. Both paths delegate to services/taskService.js
+  // so the elapsed-seconds calculation stays consistent with the timer endpoints —
+  // the previous inline versions measured from `startedAt` unconditionally and so
+  // counted paused time as worked time.
   if (finalStatus === "In Progress" && oldStatus !== "In Progress") {
     // 1. Stop any currently active timer for this employee first to prevent collision
-    const activeSession = await WorkSession.findOne({
-      employee: req.user.id,
-      stoppedAt: null
-    })
-    if (activeSession) {
-      const elapsed = (Date.now() - new Date(activeSession.startedAt).getTime()) / 1000
-      activeSession.totalSeconds = Math.max(0, Math.floor(elapsed))
-      activeSession.stoppedAt = new Date()
-      await activeSession.save()
-    }
+    await stopActiveSessionForEmployee(req.user.id)
     // 2. Start a new session for this task
     await WorkSession.create({
       task: task._id,
@@ -220,18 +312,8 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
       startedAt: new Date()
     })
   } else if (oldStatus === "In Progress" && finalStatus !== "In Progress") {
-    // If moving OUT of In Progress, stop the session for this task
-    const currentSession = await WorkSession.findOne({
-      task: task._id,
-      employee: req.user.id,
-      stoppedAt: null
-    })
-    if (currentSession) {
-      const elapsed = (Date.now() - new Date(currentSession.startedAt).getTime()) / 1000
-      currentSession.totalSeconds = Math.max(0, Math.floor(elapsed))
-      currentSession.stoppedAt = new Date()
-      await currentSession.save()
-    }
+    // Moving OUT of In Progress stops this task's session, retaining its time (Locked §2)
+    await stopRunningSessionForTask(task._id, req.user.id)
   }
 
   await task.save()
@@ -247,6 +329,351 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   res.json({ task: taskWithTime })
 })
 
+// ─── PATCH /api/tasks/:id ─────────────────────────────────────────────────────
+
+// Explicit allow-lists — anything not named here (status, isActive, history, …) is
+// rejected rather than silently ignored, so the endpoint can't be used for mass
+// assignment. Status changes go through PUT /:id/status and its workflow rules.
+const EDITABLE_FIELDS = ["title", "description", "category", "priority", "estimatedHours", "dueDate", "assignedTo", "department"]
+const EMPLOYEE_EDITABLE_FIELDS = ["title", "description", "priority", "estimatedHours", "dueDate"]
+
+// Renders a value for the audit trail. History stores display strings, not ObjectIds,
+// so the task timeline can render an edit without extra populates.
+const formatHistoryValue = (field, value) => {
+  if (value === null || value === undefined || value === "") return "—"
+  if (field === "dueDate") return new Date(value).toISOString().split("T")[0]
+  return String(value)
+}
+
+export const updateTask = asyncHandler(async (req, res, next) => {
+  const { id } = req.params
+  // `updatedAt` (concurrency check) and `comment` (optional note for the audit entry)
+  // are control fields, not editable task fields — keep them out of `fields` so they
+  // don't trip the allow-list check below.
+  const { updatedAt, comment, ...fields } = req.body
+
+  const task = await Task.findById(id)
+  if (!task || !task.isActive) {
+    return next(new AppError("Task not found", 404, "TASK_NOT_FOUND"))
+  }
+
+  if (!(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to edit this task", 403, "FORBIDDEN"))
+  }
+
+  // Locked Logic §4 — a completed task's record is final. Comments remain allowed
+  // via POST /:id/comments.
+  if (task.status === "Completed") {
+    return next(new AppError("Completed tasks are locked and cannot be edited", 409, "TASK_LOCKED"))
+  }
+
+  // Optimistic concurrency (§29) — reject a write based on a stale copy rather than
+  // silently overwriting another user's change.
+  if (updatedAt && new Date(updatedAt).getTime() !== new Date(task.updatedAt).getTime()) {
+    return next(new AppError("This task was changed by someone else. Reload to see the latest version.", 409, "TASK_MODIFIED"))
+  }
+
+  // ── Field-level authorization ───────────────────────────────────────────────
+  const isEmployee = req.user.role === "employee"
+  if (isEmployee && task.assignedBy.toString() !== task.assignedTo.toString()) {
+    return next(new AppError("You can only edit tasks you created yourself", 403, "FORBIDDEN"))
+  }
+  const allowedFields = isEmployee ? EMPLOYEE_EDITABLE_FIELDS : EDITABLE_FIELDS
+
+  const requested = Object.keys(fields).filter(k => fields[k] !== undefined)
+  if (requested.length === 0) {
+    return next(new AppError("No editable fields provided", 400, "NO_CHANGES"))
+  }
+  const forbidden = requested.filter(f => !allowedFields.includes(f))
+  if (forbidden.length > 0) {
+    return next(new AppError(`You are not allowed to edit: ${forbidden.join(", ")}`, 403, "FIELD_NOT_EDITABLE"))
+  }
+
+  // ── Validation ──────────────────────────────────────────────────────────────
+  let warning = null
+
+  if (requested.includes("title")) {
+    const title = String(fields.title).trim()
+    if (!title) return next(new AppError("Title cannot be empty", 400, "INVALID_TITLE"))
+    if (title.length > 200) return next(new AppError("Title cannot exceed 200 characters", 400, "INVALID_TITLE"))
+    fields.title = title
+  }
+
+  if (requested.includes("estimatedHours")) {
+    const hours = Number(fields.estimatedHours)
+    if (!Number.isFinite(hours) || hours < 0 || hours > 100) {
+      return next(new AppError("Estimated hours must be a number between 0 and 100", 400, "INVALID_ESTIMATE"))
+    }
+    fields.estimatedHours = hours
+  }
+
+  if (requested.includes("dueDate")) {
+    if (fields.dueDate === null) {
+      // clearing the due date is legitimate
+    } else {
+      const due = new Date(fields.dueDate)
+      if (Number.isNaN(due.getTime())) {
+        return next(new AppError("Due date is not a valid date", 400, "INVALID_DUE_DATE"))
+      }
+      fields.dueDate = due
+      // A past due date is allowed (backfilling is legitimate) but is worth flagging.
+      if (due < new Date(new Date().setHours(0, 0, 0, 0))) {
+        warning = "The due date you set is in the past — this task will show as overdue."
+      }
+    }
+  }
+
+  if (requested.includes("priority") && !["low", "medium", "high"].includes(fields.priority)) {
+    return next(new AppError("Priority must be low, medium, or high", 400, "INVALID_PRIORITY"))
+  }
+
+  if (requested.includes("description")) {
+    fields.description = String(fields.description).trim()
+    if (fields.description.length > 5000) {
+      return next(new AppError("Description cannot exceed 5000 characters", 400, "INVALID_DESCRIPTION"))
+    }
+  }
+
+  if (requested.includes("category")) {
+    fields.category = String(fields.category).trim() || "General"
+  }
+
+  // ── Reassignment ────────────────────────────────────────────────────────────
+  const isReassignment = requested.includes("assignedTo") &&
+    String(fields.assignedTo) !== task.assignedTo.toString()
+
+  let previousAssigneeName = null
+  let newAssigneeName = null
+
+  if (isReassignment) {
+    // Daily tasks are generated per employee from a template and matched on
+    // (assignedTo, templateRef, dailyDate) by the provisioning service — moving one
+    // to another person would orphan it from that cycle.
+    if (task.isDaily) {
+      return next(new AppError("Daily tasks are generated per employee and cannot be reassigned", 400, "DAILY_TASK_NOT_REASSIGNABLE"))
+    }
+
+    if (!mongoose.isValidObjectId(fields.assignedTo)) {
+      return next(new AppError("Invalid assignee", 400, "INVALID_ASSIGNEE"))
+    }
+    const newAssignee = await User.findById(fields.assignedTo).select("name isActive manager")
+    if (!newAssignee || !newAssignee.isActive) {
+      return next(new AppError("The selected assignee is not an active user", 400, "INVALID_ASSIGNEE"))
+    }
+    // A manager may only reassign within their own reporting line.
+    if (req.user.role === "manager") {
+      const inScope = newAssignee._id.toString() === req.user.id ||
+        await User.exists({ _id: newAssignee._id, manager: req.user.id })
+      if (!inScope) {
+        return next(new AppError("You can only assign tasks to your own team members", 403, "ASSIGNEE_OUT_OF_SCOPE"))
+      }
+    }
+    newAssigneeName = newAssignee.name
+    const previousAssignee = await User.findById(task.assignedTo).select("name")
+    previousAssigneeName = previousAssignee?.name || "—"
+  }
+
+  if (requested.includes("department") && fields.department) {
+    if (!mongoose.isValidObjectId(fields.department)) {
+      return next(new AppError("Invalid department", 400, "INVALID_DEPARTMENT"))
+    }
+  }
+
+  // ── Build the audit trail, then apply ───────────────────────────────────────
+  const changes = []
+  for (const field of requested) {
+    const oldValue = task[field]
+    const newValue = fields[field]
+
+    const oldComparable = oldValue instanceof Date ? oldValue.getTime() : String(oldValue ?? "")
+    const newComparable = newValue instanceof Date ? newValue.getTime() : String(newValue ?? "")
+    if (oldComparable === newComparable) continue // unchanged — don't log noise
+
+    if (field === "assignedTo") {
+      changes.push({ field, from: previousAssigneeName, to: newAssigneeName })
+    } else if (field === "department") {
+      const [oldDept, newDept] = await Promise.all([
+        oldValue ? Department.findById(oldValue).select("name") : null,
+        newValue ? Department.findById(newValue).select("name") : null
+      ])
+      changes.push({ field, from: oldDept?.name || "—", to: newDept?.name || "—" })
+    } else {
+      changes.push({ field, from: formatHistoryValue(field, oldValue), to: formatHistoryValue(field, newValue) })
+    }
+
+    task[field] = newValue
+  }
+
+  if (changes.length === 0) {
+    return next(new AppError("No changes were made", 400, "NO_CHANGES"))
+  }
+
+  // Reassigning away from someone actively tracking time closes out their session —
+  // the time itself is always retained on the task (Locked Logic §2).
+  if (isReassignment) {
+    const stopped = await stopRunningSessionForTask(task._id)
+    if (stopped && task.status === "In Progress") {
+      task.status = "Pending"
+      task.history.push({
+        fromStatus: "In Progress",
+        toStatus: "Pending",
+        changedBy: req.user.id,
+        comment: "Timer stopped — task reassigned"
+      })
+    }
+  }
+
+  task.history.push({
+    changes,
+    changedBy: req.user.id,
+    comment: comment?.trim() || ""
+  })
+
+  await task.save()
+
+  const populatedTask = await Task.findById(id)
+    .populate("assignedTo", "name email")
+    .populate("assignedBy", "name email")
+    .populate("department", "name")
+    .populate("comments.author", "name email role")
+    .populate("history.changedBy", "name email role")
+
+  const taskWithTime = await getTaskWithTime(populatedTask)
+  res.json({ task: taskWithTime, ...(warning && { warning }) })
+})
+
+// ─── PATCH /api/tasks/:id/blocked ─────────────────────────────────────────────
+// Separate from the general PATCH because the authorization differs: the ASSIGNEE can
+// declare their own task blocked even though they can't edit its other fields. Being
+// stuck is the one thing the person doing the work always knows first.
+export const setTaskBlocked = asyncHandler(async (req, res, next) => {
+  const { id } = req.params
+  const { isBlocked, reason } = req.body
+
+  if (typeof isBlocked !== "boolean") {
+    return next(new AppError("isBlocked must be true or false", 400, "INVALID_INPUT"))
+  }
+
+  const task = await Task.findById(id)
+  if (!task || !task.isActive) {
+    return next(new AppError("Task not found", 404, "TASK_NOT_FOUND"))
+  }
+
+  // Assignee, or anyone with management access to the task.
+  const isAssignee = task.assignedTo.toString() === req.user.id
+  if (!isAssignee && !(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to change this task", 403, "FORBIDDEN"))
+  }
+
+  if (task.status === "Completed") {
+    return next(new AppError("Completed tasks cannot be marked blocked", 409, "TASK_LOCKED"))
+  }
+
+  if (isBlocked) {
+    if (!reason || !reason.trim()) {
+      return next(new AppError("Say what the task is blocked on", 400, "REASON_REQUIRED"))
+    }
+    if (reason.trim().length > 300) {
+      return next(new AppError("Reason cannot exceed 300 characters", 400, "REASON_TOO_LONG"))
+    }
+    if (task.isBlocked) {
+      return next(new AppError("This task is already marked blocked", 409, "ALREADY_BLOCKED"))
+    }
+
+    task.isBlocked = true
+    task.blockedReason = reason.trim()
+    task.blockedAt = new Date()
+    task.blockedBy = req.user.id
+    task.history.push({
+      changes: [{ field: "isBlocked", from: "no", to: "yes" }],
+      changedBy: req.user.id,
+      comment: reason.trim()
+    })
+  } else {
+    if (!task.isBlocked) {
+      return next(new AppError("This task is not blocked", 409, "NOT_BLOCKED"))
+    }
+    task.isBlocked = false
+    task.blockedReason = ""
+    task.blockedAt = null
+    task.blockedBy = null
+    task.history.push({
+      changes: [{ field: "isBlocked", from: "yes", to: "no" }],
+      changedBy: req.user.id,
+      comment: reason?.trim() || "Unblocked"
+    })
+  }
+
+  await task.save()
+
+  const populatedTask = await Task.findById(id)
+    .populate("assignedTo", "name email")
+    .populate("assignedBy", "name email")
+    .populate("department", "name")
+    .populate("comments.author", "name email role")
+    .populate("history.changedBy", "name email role")
+    .populate("blockedBy", "name")
+
+  const taskWithTime = await getTaskWithTime(populatedTask)
+  res.json({ task: taskWithTime })
+})
+
+// ─── DELETE /api/tasks/:id — soft-delete (cancel) ────────────────────────────
+// Core Rule 2: never hard-delete. The task drops out of every list and metric via
+// the `isActive: true` filter every query already applies, while its work sessions
+// and audit trail remain intact.
+export const cancelTask = asyncHandler(async (req, res, next) => {
+  const { id } = req.params
+  const { reason } = req.body
+
+  if (!reason || !reason.trim()) {
+    return next(new AppError("A reason is required to cancel a task", 400, "REASON_REQUIRED"))
+  }
+  if (reason.trim().length > 300) {
+    return next(new AppError("Reason cannot exceed 300 characters", 400, "REASON_TOO_LONG"))
+  }
+
+  const task = await Task.findById(id)
+  if (!task || !task.isActive) {
+    return next(new AppError("Task not found", 404, "TASK_NOT_FOUND"))
+  }
+
+  if (!(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to cancel this task", 403, "FORBIDDEN"))
+  }
+
+  // Completed work is part of the historical record and must stay in the metrics.
+  if (task.status === "Completed") {
+    return next(new AppError("Completed tasks cannot be cancelled", 409, "TASK_LOCKED"))
+  }
+
+  // An employee may only cancel their own self-created task, and only before work
+  // has started — once it's in flight, cancelling is a manager decision.
+  if (req.user.role === "employee") {
+    const isSelfCreated = task.assignedBy.toString() === task.assignedTo.toString()
+    if (!isSelfCreated) {
+      return next(new AppError("You can only cancel tasks you created yourself", 403, "FORBIDDEN"))
+    }
+    if (task.status !== "Not Started") {
+      return next(new AppError("You can only cancel a task that hasn't been started", 403, "TASK_IN_PROGRESS"))
+    }
+  }
+
+  // Close out any running timer so it doesn't dangle against a cancelled task.
+  // The session itself is retained (Locked Logic §2).
+  await stopRunningSessionForTask(task._id)
+
+  task.isActive = false
+  task.history.push({
+    changes: [{ field: "isActive", from: "active", to: "cancelled" }],
+    changedBy: req.user.id,
+    comment: reason.trim()
+  })
+  await task.save()
+
+  res.json({ success: true, message: "Task cancelled", taskId: task._id })
+})
+
 // ─── POST /api/tasks/:id/comments ────────────────────────────────────────────
 export const addComment = asyncHandler(async (req, res, next) => {
   const { text } = req.body
@@ -259,6 +686,10 @@ export const addComment = asyncHandler(async (req, res, next) => {
   const task = await Task.findById(id)
   if (!task || !task.isActive) {
     return next(new AppError("Task not found", 404))
+  }
+
+  if (!(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to comment on this task", 403))
   }
 
   task.comments.push({ text: text.trim(), author: req.user.id })
@@ -277,76 +708,10 @@ export const addComment = asyncHandler(async (req, res, next) => {
 
 // ─── GET /api/tasks/daily — Ensure today's daily tasks exist for employee ────
 export const ensureDailyTasks = asyncHandler(async (req, res) => {
-  const employee = req.user
-  const today = new Date()
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000)
-
-  // Fetch applicable templates (global + department-matched)
-  const user = await User.findById(employee.id)
-  const templateFilter = {
-    isActive: true,
-    $or: [
-      { scope: "global" },
-      { scope: "department", departments: user.department },
-      { scope: "employees", employees: employee.id }
-    ]
-  }
-  const templates = await TaskTemplate.find(templateFilter)
-
-  // For each template, check if today's task already exists
-  for (const tpl of templates) {
-    const exists = await Task.findOne({
-      assignedTo: employee.id,
-      templateRef: tpl._id,
-      dailyDate: { $gte: startOfToday, $lt: endOfToday }
-    })
-    if (!exists) {
-      await Task.create({
-        title: tpl.title,
-        description: tpl.description,
-        category: tpl.category,
-        priority: tpl.priority,
-        estimatedHours: tpl.estimatedHours,
-        assignedBy: employee.id, // self-assigned daily
-        assignedTo: employee.id,
-        department: user.department || null,
-        status: "Not Started",
-        progressPercentage: 0,
-        isDaily: true,
-        templateRef: tpl._id,
-        dailyDate: startOfToday
-      })
-    }
-  }
-
-  // Carry forward uncompleted daily tasks from previous days (pending carry-over)
-  const incompletePastDailyTasks = await Task.find({
-    assignedTo: employee.id,
-    isDaily: true,
-    isActive: true,
-    dailyDate: { $lt: startOfToday },
-    status: { $nin: ["Completed"] }
-  })
-
-  // Mark them with a carry-forward flag by updating dailyDate to today if not already updated today
-  for (const t of incompletePastDailyTasks) {
-    // Avoid duplicates: check if a carry-forward for this template already exists today
-    if (t.templateRef) {
-      const alreadyCarried = await Task.findOne({
-        assignedTo: employee.id,
-        templateRef: t.templateRef,
-        dailyDate: { $gte: startOfToday, $lt: endOfToday }
-      })
-      if (!alreadyCarried) {
-        // Re-stamp to today so it surfaces in today's view
-        t.dailyDate = startOfToday
-        t.isCarryForward = true
-        await t.save()
-      }
-    }
-  }
-
+  // The midnight cron (see services/dailyTaskService.js) already provisions daily tasks
+  // for everyone; this route just self-heals immediately on login in case the cron
+  // hasn't run yet (e.g. server was down) or an employee was activated mid-day.
+  await provisionDailyTasksForEmployee(req.user.id)
   res.json({ success: true, message: "Daily tasks provisioned" })
 })
 
@@ -359,9 +724,13 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   if (startDate && endDate) {
     const start = new Date(startDate)
     const end = new Date(endDate)
-    // If only YYYY-MM-DD is passed, make sure end covers the entire day
+    // If only YYYY-MM-DD is passed, make sure end covers the entire day.
+    // Use setUTCHours, not setHours — the date strings here are UTC-parsed
+    // (new Date("YYYY-MM-DD") is UTC midnight), so a local-time setHours on a
+    // server running in a timezone ahead of UTC (e.g. IST) would push the
+    // boundary hours earlier than intended, silently dropping same-day tasks.
     if (endDate.length <= 10) {
-      end.setHours(23, 59, 59, 999)
+      end.setUTCHours(23, 59, 59, 999)
     }
     query.$or = [
       { createdAt: { $gte: start, $lte: end } },
@@ -385,7 +754,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     const start = new Date(startDate)
     const end = new Date(endDate)
     if (endDate.length <= 10) {
-      end.setHours(23, 59, 59, 999)
+      end.setUTCHours(23, 59, 59, 999)
     }
     matchSession.startedAt = { $gte: start, $lte: end }
     activeSessionFilter.startedAt = { $gte: start, $lte: end }
@@ -400,7 +769,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   const stoppedMap = {}
   sessionAgg.forEach(s => { stoppedMap[s._id.toString()] = s.totalStopped })
   const activeMap = {}
-  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionSeconds(s) })
+  activeSessions.forEach(s => { activeMap[s.task.toString()] = calculateSessionElapsedSeconds(s) })
 
   const trackedMap = {}
   taskIds.forEach(id => {
@@ -450,6 +819,10 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     .populate("department", "name")
     .populate("team", "name")
     .lean()
+
+  // Calendar context, fetched once for the whole report rather than per employee.
+  const orgSettings = await getOrgSettings()
+  const absencesToday = await getAbsencesInRange(new Date(), new Date(), users.map(u => u._id))
 
   // ── 4. Employee-wise report ───────────────────────────────────────────────
   const employeeReport = users.map(u => {
@@ -517,17 +890,27 @@ export const getProgressReport = asyncHandler(async (req, res) => {
 
     // Planned vs Actual Capacity Utilization + a distinct Capacity Overrun signal —
     // today only, matching V1 single-day capacity planning (Locked Logic §6/§7).
+    //
+    // Capacity comes from calendarService, the single source of truth shared with
+    // provisioning and (via /api/calendar/context) the frontend — this used to
+    // reimplement the formula inline and could drift from taskHelpers.js.
     const today = new Date()
     const todaysTasks = uTasks.filter(t => {
       const relevantDate = t.isDaily ? t.dailyDate : t.dueDate
       return relevantDate && isSameCalendarDay(new Date(relevantDate), today)
     })
-    const capacityHours = Math.max(0, (u.dailyWorkingHours ?? 8) - (u.breakHours ?? 1))
+    const capacityToday = getCapacityForDay(u, today, orgSettings, absencesToday)
+    const capacityHours = capacityToday.hours
     const plannedHoursToday = todaysTasks.reduce((sum, t) => sum + (t.estimatedHours || 0), 0)
     const actualHoursToday = todaysTasks.reduce((sum, t) => sum + (trackedMap[t._id.toString()] || 0), 0) / 3600
-    const plannedUtilizationPct = capacityHours > 0 ? Math.round((plannedHoursToday / capacityHours) * 100) : 0
-    const actualUtilizationPct = capacityHours > 0 ? Math.round((actualHoursToday / capacityHours) * 100) : 0
-    const isCapacityOverrunToday = actualHoursToday > capacityHours
+
+    // When there's no capacity today (weekend, holiday, leave) utilisation is not a
+    // meaningful number — nobody is "0% utilised" on a Sunday, the question doesn't
+    // apply. Return null so the UI renders "—" instead of an alarming 0% (§41).
+    const plannedUtilizationPct = capacityHours > 0 ? Math.round((plannedHoursToday / capacityHours) * 100) : null
+    const actualUtilizationPct = capacityHours > 0 ? Math.round((actualHoursToday / capacityHours) * 100) : null
+    // Likewise, doing twenty minutes on a day off is not a capacity overrun.
+    const isCapacityOverrunToday = capacityHours > 0 && actualHoursToday > capacityHours
 
     // Estimation pattern (Locked Logic §10) — always retains the underlying task-level
     // data (recentEstimatedTasks) so a manager can drill into exactly which tasks caused it.
@@ -552,14 +935,67 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       : 0
     const hasOverrunPattern = recentEstimatedTasks.length >= PATTERN_MIN_SAMPLE && recentOverrunProportion > PATTERN_THRESHOLD
 
-    // Pending backlog age (Locked Logic §8)
-    const pendingAges = uTasks.map(getPendingAgeDays).filter(a => a !== null)
-    const pendingBacklogAvgAgeDays = pendingAges.length > 0
-      ? parseFloat((pendingAges.reduce((a, b) => a + b, 0) / pendingAges.length).toFixed(1))
+    // Quality / rework (Locked Logic §9 — "distinguish approved work from returned work";
+    // §11 — keep it a separate signal, never folded into a score).
+    //
+    // Denominator is COMPLETED tasks that actually went through review. An employee on
+    // mostly daily work has none, and must read as "not applicable" rather than 0% or
+    // 100% (§41).
+    const reviewedCompletedTasks = completedTasks.filter(wasEverReviewed)
+    const reviewedTaskCount = reviewedCompletedTasks.length
+    const firstPassTasks = reviewedCompletedTasks.filter(t => getReworkCount(t) === 0)
+    const firstPassApprovalRate = reviewedTaskCount > 0
+      ? Math.round((firstPassTasks.length / reviewedTaskCount) * 100)
+      : null
+    const reworkRate = reviewedTaskCount > 0
+      ? Math.round(((reviewedTaskCount - firstPassTasks.length) / reviewedTaskCount) * 100)
+      : null
+    // Small samples are deliberately not flagged, mirroring the estimation-pattern rule.
+    const hasQualitySignal = reviewedTaskCount >= QUALITY_MIN_SAMPLE &&
+      (reworkRate / 100) > QUALITY_THRESHOLD
+
+    // Every flag stays traceable to the specific tasks and the feedback given (§10/§12).
+    const reworkedTasks = uTasks
+      .filter(t => getReworkCount(t) > 0)
+      .map(t => ({
+        _id: t._id,
+        title: t.title,
+        status: t.status,
+        reworkCount: getReworkCount(t),
+        lastFeedback: getLastReworkFeedback(t)
+      }))
+      .sort((a, b) => b.reworkCount - a.reworkCount)
+
+    // Backlog signals (Locked Logic §8), split into the two things "Pending" used to
+    // conflate:
+    //   paused  — the timer isn't running. A count only; its "age" is meaningless
+    //             because it mostly measures overnight and weekends.
+    //   blocked — explicitly declared stuck, with a reason. THIS is the backlog signal
+    //             worth ageing, and it's aged in working days.
+    const pausedCount = uTasks.filter(t => t.status === "Pending" && !t.isBlocked).length
+
+    const blockedTasksList = uTasks.filter(t => t.isBlocked)
+    const blockedAges = blockedTasksList.map(t => getBlockedAgeDays(t, orgSettings)).filter(a => a !== null)
+    const blockedBacklogAvgAgeDays = blockedAges.length > 0
+      ? parseFloat((blockedAges.reduce((a, b) => a + b, 0) / blockedAges.length).toFixed(1))
       : 0
-    const pendingBacklogOldestAgeDays = pendingAges.length > 0
-      ? parseFloat(Math.max(...pendingAges).toFixed(1))
+    const blockedBacklogOldestAgeDays = blockedAges.length > 0
+      ? parseFloat(Math.max(...blockedAges).toFixed(1))
       : 0
+    // Task-level detail so a blocked flag is always traceable to specific work and its
+    // reason (Locked Logic §12) — a manager can usually unblock it on the spot.
+    const blockedTasks = blockedTasksList.map(t => ({
+      _id: t._id,
+      title: t.title,
+      reason: t.blockedReason || "",
+      status: t.status,
+      ageDays: getBlockedAgeDays(t, orgSettings) ?? 0
+    }))
+
+    // Retained so nothing reading the old key breaks; now carries the blocked-based
+    // figure, which is what the label always meant. Prefer blockedBacklog* in new code.
+    const pendingBacklogAvgAgeDays = blockedBacklogAvgAgeDays
+    const pendingBacklogOldestAgeDays = blockedBacklogOldestAgeDays
 
     return {
       _id: u._id,
@@ -587,9 +1023,24 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       assignedTotal: assignedTasks.length,
       overallCompletionRate: completionRate,
       capacityHoursToday: capacityHours,
+      // Why capacity is what it is today: null | "weekend" | "holiday" | "leave" |
+      // "half_day" | "no_hours_configured". Lets the UI say "on leave" instead of "0%".
+      capacityReasonToday: capacityToday.reason,
+      isWorkingDayToday: capacityToday.isWorkingDay,
       plannedUtilizationPct,
       actualUtilizationPct,
       isCapacityOverrunToday,
+      reviewedTaskCount,
+      firstPassApprovalRate,
+      reworkRate,
+      hasQualitySignal,
+      reworkedTasks,
+      pausedCount,
+      blockedCount: blockedTasksList.length,
+      blockedBacklogAvgAgeDays,
+      blockedBacklogOldestAgeDays,
+      blockedTasks,
+      // Deprecated aliases — see above.
       pendingBacklogAvgAgeDays,
       pendingBacklogOldestAgeDays,
       hasOverrunPattern,
@@ -648,6 +1099,8 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     overdueTasks: overdueTasks.length,
     pendingTasks: allTasks.filter(t => t.status === "Pending").length,
     inReviewTasks: allTasks.filter(t => t.status === "In Review").length,
+    blockedTasks: allTasks.filter(t => t.isBlocked).length,
+    reworkedTasks: allTasks.filter(t => getReworkCount(t) > 0).length,
     totalTrackedSeconds: Object.values(trackedMap).reduce((a, b) => a + b, 0),
     avgCompletionRate: allTasks.length > 0
       ? Math.round(allTasks.filter(t => ["Completed"].includes(t.status)).length / allTasks.length * 100)

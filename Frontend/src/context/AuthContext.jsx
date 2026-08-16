@@ -10,6 +10,12 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token") || null)
   const [loading, setLoading] = useState(true)
 
+  const logout = () => {
+    localStorage.removeItem("token")
+    setToken(null)
+    setUser(null)
+  }
+
   // Configure axios authorization header on mount or token change
   useEffect(() => {
     if (token) {
@@ -44,12 +50,6 @@ export const AuthProvider = ({ children }) => {
       const errorMessage = extractErrorMessage(err, "Login failed. Please check credentials.")
       return { success: false, error: errorMessage }
     }
-  }
-
-  const logout = () => {
-    localStorage.removeItem("token")
-    setToken(null)
-    setUser(null)
   }
 
   return (

@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   TrendingUp, Repeat, Clock3, Gauge, TrendingDown, AlertTriangle,
-  Briefcase, FileText, ArrowLeft, Play, CheckCircle2
+  Briefcase, FileText, ArrowLeft, Play, CheckCircle2, RotateCcw, ShieldCheck
 } from "lucide-react"
-import { formatHours, formatTime } from "../lib/taskFormatters"
+import { formatHours, formatTime, formatUtilization, formatQualityRate } from "../lib/taskFormatters"
 import useEmployeeDashboardStore from "../store/useEmployeeDashboardStore"
 
 // Dedicated deep-dive on the employee's own progress — the dashboard's "My Progress"
@@ -39,6 +39,7 @@ const MyProgress = () => {
   const { user } = useAuth()
   const { activeSession, elapsedSeconds } = useTimer()
   const report = useEmployeeDashboardStore(s => s.myReport)
+  const reportError = useEmployeeDashboardStore(s => s.myReportError)
   const todayHours = useEmployeeDashboardStore(s => s.todayHours)
   const loadMyReport = useEmployeeDashboardStore(s => s.loadMyReport)
 
@@ -46,6 +47,23 @@ const MyProgress = () => {
     loadMyReport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  if (reportError && !report) {
+    return (
+      <Card className="border-destructive/30 bg-destructive/5">
+        <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+          <AlertTriangle className="h-8 w-8 text-destructive" />
+          <div>
+            <p className="font-semibold text-foreground">Couldn't load your progress</p>
+            <p className="text-sm text-muted-foreground">Something went wrong fetching your data. Please try again.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadMyReport} className="gap-1.5">
+            <RotateCcw className="h-3.5 w-3.5" /> Retry
+          </Button>
+        </div>
+      </Card>
+    )
+  }
 
   if (!report) {
     return (
@@ -116,7 +134,7 @@ const MyProgress = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Avg. Age</span>
-                    <span className="font-mono font-bold">{report.pendingBacklogAvgAgeDays ?? 0}d</span>
+                    <span className="font-mono font-bold">{report.blockedBacklogAvgAgeDays ?? 0}d</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Oldest</span>
@@ -128,6 +146,37 @@ const MyProgress = () => {
               )}
             </Card>
           </div>
+
+          {/* Quality — framed as information about the work, not a mark against the person */}
+          <Card className="border-border/40 shadow-lg bg-card/40 backdrop-blur-sm p-4 space-y-3">
+            <h3 className="text-sm font-bold flex items-center gap-1.5 text-foreground/90">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Review Quality
+            </h3>
+            {report.reviewedTaskCount > 0 ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-muted/20 border border-border/40 rounded-xl p-3 text-center space-y-1">
+                    <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wide">Approved First Time</div>
+                    <div className="text-xl font-black text-foreground">{formatQualityRate(report.firstPassApprovalRate)}</div>
+                  </div>
+                  <div className="bg-muted/20 border border-border/40 rounded-xl p-3 text-center space-y-1">
+                    <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wide">Reviewed Tasks</div>
+                    <div className="text-xl font-black text-foreground">{report.reviewedTaskCount}</div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Work sent back often reflects unclear requirements as much as the work itself. If a task
+                  came back, the manager's feedback is on the task itself.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground italic py-2">
+                None of your completed work has gone through manager review yet — daily and self-created
+                tasks skip review by design, so there's no first-pass rate to show.
+              </p>
+            )}
+          </Card>
 
           <Card className="border-border/40 shadow-lg bg-card/40 backdrop-blur-sm p-4 space-y-3">
             <h3 className="text-sm font-bold flex items-center gap-1.5 text-foreground/90">
@@ -237,11 +286,11 @@ const MyProgress = () => {
             <div className="space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Planned Utilization</span>
-                <span className="font-mono font-bold">{report.plannedUtilizationPct ?? 0}%</span>
+                <span className="font-mono font-bold">{formatUtilization(report.plannedUtilizationPct)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Actual Utilization</span>
-                <span className="font-mono font-bold">{report.actualUtilizationPct ?? 0}%</span>
+                <span className="font-mono font-bold">{formatUtilization(report.actualUtilizationPct)}</span>
               </div>
               {report.isCapacityOverrunToday ? (
                 <Badge variant="destructive" className="text-[9px] font-bold uppercase">Over Capacity Today</Badge>

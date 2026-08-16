@@ -1,17 +1,24 @@
+import { useState } from "react"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { User, Plus, CheckCircle2, Calendar, AlertTriangle } from "lucide-react"
+import { User, Plus, CheckCircle2, Calendar, AlertTriangle, CalendarOff } from "lucide-react"
 import PersonAvatar from "@/components/ui/person-avatar"
-import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { getEmployeeCapacity } from "../../../lib/taskHelpers"
+import { STATUS_VARIANTS, PRIORITY_VARIANTS, formatStatus } from "../../../lib/taskConstants"
+import { getEmployeeCapacity, CAPACITY_REASON_LABELS } from "../../../lib/taskHelpers"
+import { formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
+import TaskActionMenu from "../../tasks/TaskActionMenu"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
+import useCalendarStore from "../../../store/useCalendarStore"
+import AbsenceDialog from "./AbsenceDialog"
 
 // Employee-wise workload cards grid. `openCreateForEmployee` and `setDetailTask`
 // are owned by the shell since they drive the shared Create Task / Task Detail modals.
-const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
+const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions, submitting }) => {
   const tasks = useManagerDashboardStore(s => s.tasks)
   const employees = useManagerDashboardStore(s => s.employees)
+  const calendar = useCalendarStore(s => s.calendar)
+  const [absenceTarget, setAbsenceTarget] = useState(null)
 
   return (
     <div className="space-y-4">
@@ -19,7 +26,7 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
         <div>
           <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
-            Team Workload & Pending Tasks
+            Team Workload & Open Tasks
           </h3>
           <p className="text-sm text-muted-foreground">Monitor pending tasks and allocate new work employee-wise</p>
         </div>
@@ -28,12 +35,23 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {employees.filter(emp => emp.role === "employee").map(emp => {
           // Get open (non-completed) tasks for this employee
-          const empTasks = tasks.filter(t => t.assignedTo?._id === emp._id && t.status !== "Completed")
-          const inProgress = empTasks.filter(t => t.status === "In Progress").length
-          const pendingCount = empTasks.filter(t => t.status === "Pending").length
-          const inReview = empTasks.filter(t => t.status === "In Review").length
+          const openTasks = tasks.filter(t => t.assignedTo?._id === emp._id && t.status !== "Completed")
+          const inProgress = openTasks.filter(t => t.status === "In Progress").length
+          const pendingCount = openTasks.filter(t => t.status === "Pending").length
+          const inReview = openTasks.filter(t => t.status === "In Review").length
 
-          const { capacityHours, plannedHours, isOverCapacity } = getEmployeeCapacity(emp, tasks)
+          const { capacityHours, plannedHours, isOverCapacity, capacityReason, holidayName } =
+            getEmployeeCapacity(emp, tasks, 0, new Date(), calendar)
+          // Zero capacity (weekend, holiday, leave) is a normal state, not a failure —
+          // it must not render as an alarming empty red bar.
+          const isUnavailable = capacityHours === 0
+
+          // When someone is over capacity, the manager's next question is "which tasks
+          // are causing this?" — so surface the biggest estimates first. Otherwise keep
+          // the existing order.
+          const empTasks = isOverCapacity
+            ? [...openTasks].sort((a, b) => (b.estimatedHours || 0) - (a.estimatedHours || 0))
+            : openTasks
           const capacityPct = capacityHours > 0 ? Math.min(100, Math.round((plannedHours / capacityHours) * 100)) : 0
 
           return (
@@ -46,35 +64,69 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
                     <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">{emp.team?.name || "Employee"}</span>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                  onClick={() => openCreateForEmployee(emp._id)}
-                  title={`Assign task to ${emp.name}`}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    onClick={() => setAbsenceTarget(emp)}
+                    title={`Record time away for ${emp.name}`}
+                  >
+                    <CalendarOff className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    onClick={() => openCreateForEmployee(emp._id)}
+                    title={`Assign task to ${emp.name}`}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="pt-4 flex-1 flex flex-col justify-between space-y-4">
                 {/* Today's Capacity (Locked Logic §6 — single-day planning) */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] font-semibold">
+                  <div className="flex items-center justify-between text-[10px] font-semibold gap-2">
                     <span className="text-muted-foreground uppercase tracking-wider">Today's Capacity</span>
-                    {isOverCapacity ? (
+                    {isUnavailable ? (
+                      // Neutral tone deliberately — being off is not a problem to flag.
+                      <span className="flex items-center gap-1 text-muted-foreground font-bold">
+                        <CalendarOff className="h-3 w-3" />
+                        {holidayName || CAPACITY_REASON_LABELS[capacityReason] || "Unavailable"}
+                      </span>
+                    ) : isOverCapacity ? (
                       <span className="flex items-center gap-1 text-destructive font-bold">
                         <AlertTriangle className="h-3 w-3" /> Over Capacity
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">{plannedHours}h / {capacityHours}h planned</span>
+                      <span className="text-muted-foreground">
+                        {plannedHours}h / {capacityHours}h planned
+                        {capacityReason === "half_day" && " · half day"}
+                      </span>
                     )}
                   </div>
-                  <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${isOverCapacity ? "bg-destructive" : "bg-primary"}`}
-                      style={{ width: `${capacityPct}%` }}
-                    />
-                  </div>
+                  {isUnavailable ? (
+                    <div className="w-full bg-muted/40 rounded-full h-1.5 overflow-hidden">
+                      <div className="h-full rounded-full bg-muted-foreground/20 w-full" />
+                    </div>
+                  ) : (
+                    <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${isOverCapacity ? "bg-destructive" : "bg-primary"}`}
+                        style={{ width: `${capacityPct}%` }}
+                      />
+                    </div>
+                  )}
+                  {/* Work planned on a day with no capacity is worth surfacing — it's
+                      almost always a due date that needs moving. */}
+                  {isUnavailable && plannedHours > 0 && (
+                    <p className="text-[9px] text-amber-400 font-semibold flex items-center gap-1">
+                      <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                      {plannedHours}h of work is scheduled for today anyway
+                    </p>
+                  )}
                 </div>
 
                 {/* Status Metrics Strip */}
@@ -89,7 +141,7 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
                   </div>
                   <div>
                     <div className="font-bold text-amber-400">{pendingCount}</div>
-                    <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Pending</div>
+                    <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Paused</div>
                   </div>
                   <div>
                     <div className="font-bold text-warning-foreground">{inReview}</div>
@@ -115,14 +167,38 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
                           <span className="text-[11px] font-bold text-foreground/90 line-clamp-2 leading-tight">
                             {t.title}
                           </span>
-                          <Badge variant={PRIORITY_VARIANTS[t.priority]} className="capitalize text-[7px] py-0 px-1 font-bold rounded-sm shrink-0">
-                            {t.priority}
-                          </Badge>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Estimate drives the capacity bar above — showing it here
+                                makes the cause of an overload legible at a glance. */}
+                            {t.estimatedHours > 0 && (
+                              <span className={`text-[9px] font-bold tabular-nums ${isOverCapacity ? "text-destructive" : "text-muted-foreground"}`}>
+                                {t.estimatedHours}h
+                              </span>
+                            )}
+                            <Badge variant={PRIORITY_VARIANTS[t.priority]} className="capitalize text-[7px] py-0 px-1 font-bold rounded-sm">
+                              {t.priority}
+                            </Badge>
+                            {taskActions && (
+                              <TaskActionMenu task={t} {...taskActions} disabled={submitting} className="h-5 w-5" />
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center justify-between text-[9px] text-muted-foreground font-medium">
-                          <Badge variant={STATUS_VARIANTS[t.status]} className="text-[7px] py-0 px-1 rounded-sm">
-                            {t.status}
-                          </Badge>
+                          <div className="flex items-center gap-1">
+                            <Badge variant={STATUS_VARIANTS[t.status]} className="text-[7px] py-0 px-1 rounded-sm">
+                              {formatStatus(t.status)}
+                            </Badge>
+                            {formatBlocked(t) && (
+                              <Badge variant="destructive" className="text-[7px] py-0 px-1 rounded-sm font-bold uppercase" title={t.blockedReason}>
+                                {formatBlocked(t)}
+                              </Badge>
+                            )}
+                            {t.isCarryForward && (
+                              <Badge variant="outline" className="text-[7px] py-0 px-1 rounded-sm font-bold uppercase border-amber-500/30 text-amber-400 bg-amber-500/5">
+                                {formatCarryForwardDate(t) || "Carried"}
+                              </Badge>
+                            )}
+                          </div>
                           {t.dueDate && (
                             <span className="flex items-center gap-0.5">
                               <Calendar className="h-2.5 w-2.5" />
@@ -139,6 +215,13 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask }) => {
           )
         })}
       </div>
+
+      <AbsenceDialog
+        key={absenceTarget?._id}
+        employee={absenceTarget}
+        open={absenceTarget !== null}
+        onOpenChange={(open) => { if (!open) setAbsenceTarget(null) }}
+      />
     </div>
   )
 }

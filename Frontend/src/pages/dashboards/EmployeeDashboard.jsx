@@ -9,6 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ClipboardList, CheckCircle2, Clock, Plus, Kanban, List } from "lucide-react"
 import { formatTime } from "../../lib/taskFormatters"
 import { useTaskStatusMutation } from "../../hooks/useTaskStatusMutation"
+import { useTaskMutation } from "../../hooks/useTaskMutation"
+import { useToast } from "../../context/ToastContext"
 import useEmployeeDashboardStore from "../../store/useEmployeeDashboardStore"
 import DailyTasksSection from "../../components/dashboards/employee/DailyTasksSection"
 import MyProgressSection from "../../components/dashboards/employee/MyProgressSection"
@@ -16,7 +18,10 @@ import NeedsAttentionStrip from "../../components/dashboards/employee/NeedsAtten
 import TaskListView from "../../components/dashboards/employee/TaskListView"
 import TaskKanbanBoard from "../../components/dashboards/employee/TaskKanbanBoard"
 import CreateTaskModal from "../../components/dashboards/employee/CreateTaskModal"
+import CancelTaskDialog from "../../components/tasks/CancelTaskDialog"
 import EmployeeTaskDetailModal from "../../components/tasks/EmployeeTaskDetailModal"
+import ScopeToggle from "../../components/tasks/ScopeToggle"
+import { SCOPE_LABELS } from "../../lib/taskScope"
 
 const EmployeeDashboard = () => {
   const { user } = useAuth()
@@ -29,13 +34,19 @@ const EmployeeDashboard = () => {
   const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
   const provisionAndLoad = useEmployeeDashboardStore(s => s.provisionAndLoad)
   const loadMyReport = useEmployeeDashboardStore(s => s.loadMyReport)
+  const scope = useEmployeeDashboardStore(s => s.scope)
+  const setScope = useEmployeeDashboardStore(s => s.setScope)
 
   const [detailTask, setDetailTask] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [formMode, setFormMode] = useState("create")
+  const [editTask, setEditTask] = useState(null)
+  const [cancelTarget, setCancelTarget] = useState(null)
   const [viewMode, setViewMode] = useState("board") // "board" | "list"
   const [transitionComment, setTransitionComment] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const toast = useToast()
 
   const filteredTasks = tasks.filter(t => {
     const matchesSearch = searchQuery
@@ -89,6 +100,43 @@ const EmployeeDashboard = () => {
       }
     }
   })
+
+  // Blocked is the one mutation an employee has on any task assigned to them — being
+  // stuck is theirs to report (see BlockedPanel).
+  const { setBlocked, patchTask, cancelTask } = useTaskMutation({
+    tasks, setTasks, detailTask, setDetailTask, setSubmitting
+  })
+
+  // An employee may edit and cancel tasks they created themselves — the backend has
+  // always allowed this (EMPLOYEE_EDITABLE_FIELDS); it just had no UI.
+  const openCreate = () => { setFormMode("create"); setEditTask(null); setCreateOpen(true) }
+  const openEdit = (task) => { setFormMode("edit"); setEditTask(task); setCreateOpen(true) }
+  const handleSaveEdit = (fields) => patchTask(editTask._id, fields)
+  const handleCancelConfirm = async (taskId, reason) => {
+    const result = await cancelTask(taskId, reason)
+    if (result.success) toast.success("Task cancelled.")
+    return result
+  }
+
+  // Only self-created, not-yet-completed tasks are editable; cancelling is further
+  // limited to work that hasn't started (the server enforces both).
+  const buildTaskActions = (task) => {
+    const selfCreated = (task.assignedBy?._id || task.assignedBy) === (task.assignedTo?._id || task.assignedTo)
+    return {
+      onView: setDetailTask,
+      onToggleBlocked: handleToggleBlocked,
+      ...(selfCreated && { onEdit: openEdit }),
+      ...(selfCreated && task.status === "Not Started" && { onCancel: setCancelTarget })
+    }
+  }
+
+  const handleToggleBlocked = async (task, isBlocked, reason) => {
+    const result = await setBlocked(task._id, isBlocked, reason)
+    if (result.success) {
+      toast.success(isBlocked ? "Marked as blocked — your manager can see it." : "Task unblocked.")
+    }
+    return result
+  }
 
   const handleStatusTransition = async (newStatus, taskId = null) => {
     const targetTaskId = taskId || detailTask?._id
@@ -164,7 +212,7 @@ const EmployeeDashboard = () => {
             Welcome back, <strong className="text-foreground">{user?.name}</strong>. Start timers on your assigned tasks, record log hours, and submit work reviews.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
+        <Button onClick={openCreate} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
           <Plus className="h-4.5 w-4.5" /> Create Task
         </Button>
       </div>
@@ -177,12 +225,14 @@ const EmployeeDashboard = () => {
         <Card className="border-border/50 card-hover relative overflow-hidden group">
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-md"></div>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Assigned Tasks</CardTitle>
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{SCOPE_LABELS[scope]}'s Tasks</CardTitle>
             <ClipboardList className="h-4.5 w-4.5 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold tracking-tight">{tasks.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">All-time · every task ever assigned to you</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {scope === "all" ? "Every task ever assigned to you" : `In scope for ${SCOPE_LABELS[scope].toLowerCase()}`}
+            </p>
           </CardContent>
         </Card>
 
@@ -210,7 +260,9 @@ const EmployeeDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold tracking-tight">{completedCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">All-time · marked completed or approved</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {scope === "all" ? "All-time · marked completed or approved" : `Completed within ${SCOPE_LABELS[scope].toLowerCase()}`}
+            </p>
           </CardContent>
         </Card>
 
@@ -235,7 +287,9 @@ const EmployeeDashboard = () => {
         <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <CardTitle className="text-xl font-bold">My Assigned Tasks</CardTitle>
-            <CardDescription>Track status changes and active timers below</CardDescription>
+            <CardDescription>
+              {scope === "all" ? "Every task assigned to you" : `Showing ${SCOPE_LABELS[scope].toLowerCase()} — overdue work always stays visible`}
+            </CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
             {/* Search Input */}
@@ -245,6 +299,8 @@ const EmployeeDashboard = () => {
               onChange={e => setSearchQuery(e.target.value)}
               className="h-8 text-xs rounded-lg bg-background/50 border-border/40 max-w-[200px]"
             />
+            <ScopeToggle scope={scope} onChange={setScope} />
+
             {/* View Mode Toggle */}
             <div className="flex items-center bg-muted/60 p-1 rounded-lg border border-border/40 shrink-0">
               <Button
@@ -284,12 +340,16 @@ const EmployeeDashboard = () => {
               searchQuery={searchQuery}
               setDetailTask={setDetailTask}
               handleStatusTransition={handleStatusTransition}
+              buildTaskActions={buildTaskActions}
+              submitting={submitting}
             />
           ) : (
             <TaskKanbanBoard
               filteredTasks={filteredTasks}
               setDetailTask={setDetailTask}
               handleStatusTransition={handleStatusTransition}
+              buildTaskActions={buildTaskActions}
+              submitting={submitting}
             />
           )}
         </CardContent>
@@ -304,6 +364,18 @@ const EmployeeDashboard = () => {
         setCreateOpen={setCreateOpen}
         submitting={submitting}
         setSubmitting={setSubmitting}
+        mode={formMode}
+        editTask={editTask}
+        onSave={handleSaveEdit}
+      />
+
+      <CancelTaskDialog
+        key={cancelTarget?._id}
+        task={cancelTarget}
+        open={cancelTarget !== null}
+        onOpenChange={(open) => { if (!open) setCancelTarget(null) }}
+        onConfirm={handleCancelConfirm}
+        submitting={submitting}
       />
 
       {/* Task Detail Modal */}
@@ -313,6 +385,7 @@ const EmployeeDashboard = () => {
         handleStatusTransition={handleStatusTransition}
         submitting={submitting}
         onCommentPosted={loadTasks}
+        onToggleBlocked={handleToggleBlocked}
       />
     </div>
   )

@@ -2,18 +2,20 @@ import { useTimer } from "../../../context/TimerContext"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import TaskActionMenu from "../../tasks/TaskActionMenu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Clock, Calendar, Play, Pause, Square, AlertCircle, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
-import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { formatTrackedTime, formatOverrun } from "../../../lib/taskFormatters"
+import { STATUS_VARIANTS, PRIORITY_VARIANTS, formatStatus } from "../../../lib/taskConstants"
+import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
 import { isSelfCreated, isTaskOverdue, getNextStatuses } from "../../../lib/taskHelpers"
 
 // Employee's table/list view of tasks, relocated verbatim from the inline
 // EmployeeDashboard's viewMode === "list" branch. `filteredTasks`/`loading` come from
 // the shell (search-filtered `tasks`); `setDetailTask` opens the shared Task Detail
 // modal; `handleStatusTransition` is the shell's shared useTaskStatusMutation wrapper.
-const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, handleStatusTransition }) => {
+const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, handleStatusTransition, buildTaskActions, submitting }) => {
   const { activeSession, isRunning, isPending, startTimer, pauseTimer, resumeTimer, stopTimer } = useTimer()
 
   const handlePlayRow = async (e, taskId) => {
@@ -34,12 +36,13 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
             <TableHead className="font-semibold text-foreground/80">Status Workflow</TableHead>
             <TableHead className="font-semibold text-foreground/80 text-center">Track Time</TableHead>
             <TableHead className="font-semibold text-foreground/80 text-right">Progress</TableHead>
+            <TableHead className="w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {loading ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-12">
+              <TableCell colSpan={8} className="text-center py-12">
                 <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Clock className="h-6 w-6 animate-spin text-primary" />
                   <span className="text-sm">Loading assigned tasks...</span>
@@ -48,7 +51,7 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
             </TableRow>
           ) : filteredTasks.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-16">
+              <TableCell colSpan={8} className="text-center py-16">
                 <div className="max-w-[320px] mx-auto flex flex-col items-center justify-center gap-3">
                   <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
                     <AlertCircle className="h-6 w-6" />
@@ -96,7 +99,12 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
                         )}
                         {t.isCarryForward && (
                           <Badge variant="outline" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase border-amber-500/30 text-amber-400 bg-amber-500/5">
-                            Carried Over
+                            {formatCarryForwardDate(t) || "Carried Over"}
+                          </Badge>
+                        )}
+                        {formatBlocked(t) && (
+                          <Badge variant="destructive" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase" title={t.blockedReason}>
+                            {formatBlocked(t)}
                           </Badge>
                         )}
                         {formatOverrun(t) && (
@@ -143,18 +151,20 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
                   </TableCell>
                   <TableCell onClick={e => e.stopPropagation()}>
                     {nextOptions.length > 0 ? (
-                      <select
+                      <Select
                         value={t.status}
-                        onChange={e => {
-                          handleStatusTransition(e.target.value, t._id)
-                        }}
-                        className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        onValueChange={value => handleStatusTransition(value, t._id)}
                       >
-                        <option value={t.status}>{t.status}</option>
-                        {nextOptions.map(opt => (
-                          <option key={opt} value={opt}>➔ {opt === "Completed" ? "Complete Task" : opt}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger className="h-8 w-auto min-w-[150px] gap-1.5 rounded-lg border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={t.status}>{formatStatus(t.status)}</SelectItem>
+                          {nextOptions.map(opt => (
+                            <SelectItem key={opt} value={opt}>➔ {opt === "Completed" ? "Complete Task" : opt}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
                         {t.status}
@@ -233,6 +243,11 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
                         {t.progressPercentage}%
                       </span>
                     </div>
+                  </TableCell>
+                  <TableCell onClick={e => e.stopPropagation()} className="text-right">
+                    {buildTaskActions && (
+                      <TaskActionMenu task={t} {...buildTaskActions(t)} disabled={submitting} />
+                    )}
                   </TableCell>
                   </motion.tr>
                 )

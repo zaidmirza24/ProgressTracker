@@ -7,6 +7,7 @@ import API_BASE from "../lib/api"
 const useReportsStore = create((set, get) => ({
   reports: null,
   loading: true,
+  error: false,
   activeSubTab: "employees",
   timeframe: "week",
   startDate: "",
@@ -29,7 +30,7 @@ const useReportsStore = create((set, get) => ({
   fetchReports: async () => {
     const { timeframe, startDate, endDate } = get()
     try {
-      set({ loading: true })
+      set({ loading: true, error: false })
       let url = `${API_BASE}/api/tasks/report`
       const params = []
 
@@ -63,6 +64,7 @@ const useReportsStore = create((set, get) => ({
       set({ reports: res.data })
     } catch (err) {
       console.error("Error loading progress reports:", err)
+      set({ error: true })
     } finally {
       set({ loading: false })
     }

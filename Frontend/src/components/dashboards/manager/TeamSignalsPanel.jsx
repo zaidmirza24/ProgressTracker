@@ -3,10 +3,10 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   ChevronDown, ChevronRight, ClipboardList, Clock, Gauge,
-  CheckCircle2, CalendarClock, ShieldCheck, TrendingDown, AlertTriangle
+  CheckCircle2, CalendarClock, ShieldCheck, ShieldAlert, TrendingDown, AlertTriangle
 } from "lucide-react"
 import PersonAvatar from "@/components/ui/person-avatar"
-import { formatHours, buildEmployeeSignalSummary } from "../../../lib/taskFormatters"
+import { formatHours, buildEmployeeSignalSummary, formatUtilization, formatQualityRate, CAPACITY_REASON_TEXT } from "../../../lib/taskFormatters"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
 // Iteration 11: wires every signal from Iterations 7-10 (overrun alerts, V1 capacity,
@@ -74,6 +74,16 @@ const TeamSignalsPanel = () => {
                         <TrendingDown className="h-2.5 w-2.5" /> Pattern
                       </Badge>
                     )}
+                    {r.hasQualitySignal && (
+                      <Badge variant="outline" className="text-[8px] py-0 px-1.5 font-bold uppercase border-amber-500/40 text-amber-400">
+                        Rework
+                      </Badge>
+                    )}
+                    {(r.blockedCount ?? 0) > 0 && (
+                      <Badge variant="destructive" className="text-[8px] py-0 px-1.5 font-bold uppercase gap-0.5">
+                        <ShieldAlert className="h-2.5 w-2.5" /> {r.blockedCount} Blocked
+                      </Badge>
+                    )}
                     {r.overdue > 0 && (
                       <Badge variant="outline" className="text-[8px] py-0 px-1.5 font-bold uppercase border-amber-500/30 text-amber-400">
                         {r.overdue} Overdue
@@ -105,8 +115,13 @@ const TeamSignalsPanel = () => {
                   </SignalBlock>
 
                   <SignalBlock icon={Gauge} label="Capacity Today" flagged={r.isCapacityOverrunToday}>
-                    <Row label="Planned Util." value={`${r.plannedUtilizationPct}%`} />
-                    <Row label="Actual Util." value={`${r.actualUtilizationPct}%`} />
+                    <Row label="Planned Util." value={formatUtilization(r.plannedUtilizationPct)} />
+                    <Row label="Actual Util." value={formatUtilization(r.actualUtilizationPct)} />
+                    {r.capacityHoursToday === 0 && (
+                      <span className="text-muted-foreground text-[10px] capitalize">
+                        {CAPACITY_REASON_TEXT[r.capacityReasonToday] || "Not a working day"}
+                      </span>
+                    )}
                     {r.isCapacityOverrunToday && (
                       <span className="text-destructive font-bold">Over capacity today</span>
                     )}
@@ -121,11 +136,32 @@ const TeamSignalsPanel = () => {
 
                   <SignalBlock icon={CalendarClock} label="Deadline" flagged={r.overdue > 0}>
                     <Row label="Overdue" value={r.overdue} />
-                    <Row label="Pending Backlog" value={r.pending} />
-                    <Row label="Avg Pending Age" value={`${r.pendingBacklogAvgAgeDays}d`} />
+                    <Row label="Paused" value={r.pausedCount ?? r.pending} />
+                    <span className="text-muted-foreground text-[9px]">paused = timer off, not stuck</span>
                   </SignalBlock>
 
-                  <SignalBlock icon={ShieldCheck} label="Quality">
+                  <SignalBlock icon={ShieldAlert} label="Blocked" flagged={(r.blockedCount ?? 0) > 0}>
+                    <Row label="Blocked" value={r.blockedCount ?? 0} />
+                    {(r.blockedCount ?? 0) > 0 ? (
+                      <>
+                        <Row label="Avg Age" value={`${r.blockedBacklogAvgAgeDays}d`} />
+                        <span className="text-muted-foreground text-[9px]">working days</span>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground italic">Nothing stuck</span>
+                    )}
+                  </SignalBlock>
+
+                  <SignalBlock icon={ShieldCheck} label="Quality" flagged={r.hasQualitySignal}>
+                    <Row label="First-pass Approval" value={formatQualityRate(r.firstPassApprovalRate)} />
+                    <Row label="Rework Rate" value={formatQualityRate(r.reworkRate)} />
+                    {r.reviewedTaskCount > 0 ? (
+                      <span className="text-muted-foreground text-[9px]">
+                        of {r.reviewedTaskCount} reviewed task{r.reviewedTaskCount === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground italic text-[10px]">No review-gated work yet</span>
+                    )}
                     <Row label="Avg Resolution" value={`${r.avgResolutionDays}d`} />
                   </SignalBlock>
 

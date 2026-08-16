@@ -1,11 +1,13 @@
 import { useTimer } from "../../../context/TimerContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import TaskActionMenu from "../../tasks/TaskActionMenu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Calendar, Play, Pause, Square, Loader2 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
-import { PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { formatTrackedTime, formatTime, formatOverrun } from "../../../lib/taskFormatters"
+import { PRIORITY_VARIANTS, formatStatus } from "../../../lib/taskConstants"
+import { formatTrackedTime, formatTime, formatOverrun, formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
 import { isSelfCreated, isTaskOverdue, getNextStatuses } from "../../../lib/taskHelpers"
 
 // Employee's Kanban board view, relocated verbatim from the inline EmployeeDashboard's
@@ -13,7 +15,7 @@ import { isSelfCreated, isTaskOverdue, getNextStatuses } from "../../../lib/task
 // logic, kept local here since no sibling component needs it). `filteredTasks` comes
 // from the shell (search-filtered `tasks`); `setDetailTask` opens the shared Task
 // Detail modal; `handleStatusTransition` is the shell's shared useTaskStatusMutation wrapper.
-const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition }) => {
+const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition, buildTaskActions, submitting }) => {
   const { activeSession, elapsedSeconds, isRunning, isPending, startTimer, pauseTimer, resumeTimer, stopTimer } = useTimer()
 
   const handlePlayRow = async (e, taskId) => {
@@ -39,7 +41,7 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition 
         indicatorColor: "bg-violet-500"
       },
       pending: {
-        title: "Pending",
+        title: "Paused",
         tasks: [],
         color: "border-amber-500 bg-amber-500/5",
         badgeColor: "bg-amber-500/10 text-amber-400",
@@ -153,8 +155,16 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition 
                         colId === "underReview" ? "bg-sky-500" : "bg-green-500"
                       }`} />
 
+                    {/* Card actions — absolutely positioned so the card's own onClick
+                        (open detail) keeps working everywhere else. */}
+                    {buildTaskActions && (
+                      <div className="absolute top-2 right-1.5 z-10">
+                        <TaskActionMenu task={t} {...buildTaskActions(t)} disabled={submitting} className="h-6 w-6" />
+                      </div>
+                    )}
+
                     <div className="pl-1.5 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-2 pr-6">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider truncate max-w-[120px]">
                           {t.category}
                         </span>
@@ -179,7 +189,12 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition 
                         )}
                         {t.isCarryForward && (
                           <Badge variant="outline" className="text-[8px] py-0 px-1 font-bold rounded-sm uppercase border-amber-500/30 text-amber-400 bg-amber-500/5">
-                            Carried Over
+                            {formatCarryForwardDate(t) || "Carried Over"}
+                          </Badge>
+                        )}
+                        {formatBlocked(t) && (
+                          <Badge variant="destructive" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase" title={t.blockedReason}>
+                            {formatBlocked(t)}
                           </Badge>
                         )}
                         {formatOverrun(t) && (
@@ -293,18 +308,20 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition 
 
                         {/* Quick workflow transition selection — own row, full card width */}
                         {nextOptions.length > 0 && (
-                          <select
+                          <Select
                             value={t.status}
-                            onChange={e => {
-                              handleStatusTransition(e.target.value, t._id)
-                            }}
-                            className="h-7 w-full rounded-md border border-input bg-card text-foreground px-2 py-0.5 text-[10px] font-bold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            onValueChange={value => handleStatusTransition(value, t._id)}
                           >
-                            <option value={t.status}>{t.status}</option>
-                            {nextOptions.map(opt => (
-                              <option key={opt} value={opt}>➔ {opt === "Completed" ? "Complete" : opt}</option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="h-7 w-full gap-1 rounded-md border-input bg-card text-foreground px-2 py-0.5 text-[10px] font-bold">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={t.status}>{formatStatus(t.status)}</SelectItem>
+                              {nextOptions.map(opt => (
+                                <SelectItem key={opt} value={opt}>➔ {opt === "Completed" ? "Complete" : opt}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
                       </div>
                     </div>

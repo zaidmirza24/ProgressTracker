@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Building2, Users, UserPlus, Repeat, Network } from "lucide-react"
+import { Building2, Users, UserPlus, Repeat, Network, CalendarDays } from "lucide-react"
 import DepartmentsTab from "../../components/dashboards/superadmin/DepartmentsTab"
 import TeamsTab from "../../components/dashboards/superadmin/TeamsTab"
 import UsersTab from "../../components/dashboards/superadmin/UsersTab/UsersTab"
 import TaskTemplatesTab from "../../components/dashboards/superadmin/TaskTemplatesTab"
+import WorkCalendarTab from "../../components/dashboards/superadmin/WorkCalendarTab"
 
 // Org-structure configuration, split out of the Admin Panel: Departments/Teams/Users/
 // Task Templates are set-up-once config screens with a different cadence than the
@@ -19,11 +20,11 @@ const OrganizationPage = () => {
           <Network className="h-8 w-8 text-primary" />
           Organization
         </h2>
-        <p className="text-muted-foreground">Manage departments, teams, user assignments, and task templates.</p>
+        <p className="text-muted-foreground">Manage departments, teams, user assignments, task templates, and the work calendar.</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-        <TabsList className="flex w-full max-w-[600px] border-b border-border bg-transparent p-0 rounded-none h-12 gap-6 overflow-x-auto">
+        <TabsList className="flex w-full max-w-[760px] border-b border-border bg-transparent p-0 rounded-none h-12 gap-6 overflow-x-auto">
           <TabsTrigger
             value="departments"
             className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
@@ -48,6 +49,12 @@ const OrganizationPage = () => {
           >
             <Repeat className="h-4 w-4" /> Task Templates
           </TabsTrigger>
+          <TabsTrigger
+            value="work-calendar"
+            className="flex items-center gap-1.5 px-1 pb-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary text-sm font-semibold tracking-tight text-muted-foreground whitespace-nowrap"
+          >
+            <CalendarDays className="h-4 w-4" /> Work Calendar
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="departments">
@@ -61,6 +68,9 @@ const OrganizationPage = () => {
         </TabsContent>
         <TabsContent value="task-templates">
           <TaskTemplatesTab />
+        </TabsContent>
+        <TabsContent value="work-calendar">
+          <WorkCalendarTab />
         </TabsContent>
       </Tabs>
     </div>

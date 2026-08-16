@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "../../../context/AuthContext"
-import { getLocalDateString } from "../../../lib/taskFormatters"
 import { useTaskStatusMutation } from "../../../hooks/useTaskStatusMutation"
+import { useTaskActions } from "../../../hooks/useTaskActions"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
+import useCalendarStore from "../../../store/useCalendarStore"
 import AttentionZone from "../manager/AttentionZone"
 import PendingReviewQueue from "../manager/PendingReviewQueue"
 import TeamWorkloadTracker from "../manager/TeamWorkloadTracker"
 import TeamCapacityForecast from "../manager/TeamCapacityForecast"
 import TeamSignalsPanel from "../manager/TeamSignalsPanel"
-import CreateTaskModal from "../manager/CreateTaskModal"
+import TaskActionDialogs from "../../tasks/TaskActionDialogs"
 import ManagerTaskDetailModal from "../../tasks/ManagerTaskDetailModal"
 import WorkLogsSection from "../manager/WorkLogsSection"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,17 +30,9 @@ const TeamCommandCenter = () => {
   const setTasks = useManagerDashboardStore(s => s.setTasks)
   const loading = useManagerDashboardStore(s => s.loading)
   const loadData = useManagerDashboardStore(s => s.loadData)
+  const fetchCalendar = useCalendarStore(s => s.fetchContext)
 
-  const [createOpen, setCreateOpen] = useState(false)
   const [detailTask, setDetailTask] = useState(null)
-
-  // Forms
-  const [taskForm, setTaskForm] = useState({
-    title: "", description: "", category: "General",
-    department: "", assignedTo: "", priority: "medium",
-    estimatedHours: 0, dueDate: getLocalDateString()
-  })
-  const [customCategoryActive, setCustomCategoryActive] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // ─── Optimistic Status Update ──────────────────────────────────────────────
@@ -50,20 +43,22 @@ const TeamCommandCenter = () => {
     tasks, setTasks, detailTask, setDetailTask, setSubmitting
   })
 
+  // ─── Task Actions (create/edit/reassign/reschedule/cancel) ─────────────────
+  // Shared with TeamTasksPage via the hook, so both surfaces stay in step.
+  // Patching the tasks array optimistically is what makes capacity bars, the
+  // Attention Zone counts, and the forecast recalculate in the same frame.
+  const { taskActions, dialogProps, openCreate, openCreateForEmployee, handleToggleBlocked } = useTaskActions({
+    tasks, setTasks, detailTask, setDetailTask, submitting, setSubmitting
+  })
+
   useEffect(() => {
     loadData(userId, user?.role)
+    // Working days, holidays and absences — every capacity number on this page is
+    // computed against them. Fetched in parallel; capacity falls back to "every day
+    // is a working day" until it lands.
+    fetchCalendar()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const openCreateForEmployee = (employeeId) => {
-    setTaskForm({
-      title: "", description: "", category: "General",
-      department: "", assignedTo: employeeId, priority: "medium",
-      estimatedHours: 0, dueDate: getLocalDateString()
-    })
-    setCustomCategoryActive(false)
-    setCreateOpen(true)
-  }
 
   // Metrics
   const pendingReviewCount = tasks.filter(t => t.status === "In Review").length
@@ -132,7 +127,7 @@ const TeamCommandCenter = () => {
           </h3>
           <p className="text-sm text-muted-foreground">Review submissions, track workload, and assign tasks.</p>
         </div>
-        <Button onClick={() => { setCreateOpen(true); setCustomCategoryActive(false); }} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
+        <Button onClick={openCreate} className="gap-2 font-semibold shadow-md glow-primary self-start sm:self-auto">
           <Plus className="h-4.5 w-4.5" /> Create Task
         </Button>
       </div>
@@ -175,7 +170,7 @@ const TeamCommandCenter = () => {
           <CardContent>
             <div className="text-3xl font-bold tracking-tight">{inProgressCount}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Actively tracked{pendingCount > 0 ? ` · ${pendingCount} paused/pending` : ""}
+              Actively tracked{pendingCount > 0 ? ` · ${pendingCount} paused` : ""}
             </p>
           </CardContent>
         </Card>
@@ -199,6 +194,7 @@ const TeamCommandCenter = () => {
           updateTaskStatus={updateTaskStatus}
           submitting={submitting}
           setDetailTask={setDetailTask}
+          taskActions={taskActions}
         />
       </div>
 
@@ -207,6 +203,8 @@ const TeamCommandCenter = () => {
         <TeamWorkloadTracker
           openCreateForEmployee={openCreateForEmployee}
           setDetailTask={setDetailTask}
+          taskActions={taskActions}
+          submitting={submitting}
         />
       </div>
 
@@ -218,18 +216,8 @@ const TeamCommandCenter = () => {
       {/* Team Capacity Forecast (V2 preview) */}
       <TeamCapacityForecast />
 
-      {/* Create Task Modal */}
-      <CreateTaskModal
-        createOpen={createOpen}
-        setCreateOpen={setCreateOpen}
-        taskForm={taskForm}
-        setTaskForm={setTaskForm}
-        customCategoryActive={customCategoryActive}
-        setCustomCategoryActive={setCustomCategoryActive}
-        submitting={submitting}
-        setSubmitting={setSubmitting}
-        user={user}
-      />
+      {/* Create / Edit, Cancel, and Reassign dialogs */}
+      <TaskActionDialogs user={user} {...dialogProps} />
 
       {/* Task Detail & Approval Modal */}
       <ManagerTaskDetailModal
@@ -238,6 +226,9 @@ const TeamCommandCenter = () => {
         updateTaskStatus={updateTaskStatus}
         submitting={submitting}
         onCommentPosted={() => loadData(userId, user?.role)}
+        onEdit={(task) => { setDetailTask(null); taskActions.onEdit(task) }}
+        onCancel={(task) => { setDetailTask(null); taskActions.onCancel(task) }}
+        onToggleBlocked={handleToggleBlocked}
       />
 
       {/* Work Logs Section */}

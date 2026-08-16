@@ -29,6 +29,11 @@ const EmployeesReport = () => {
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-bold text-foreground/90 flex items-center gap-1.5">
                     {e.name}
+                    {e.hasQualitySignal && (
+                      <Badge variant="outline" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase border-amber-500/40 text-amber-400" title="More than half of reviewed work needed rework — see drill-down">
+                        Rework
+                      </Badge>
+                    )}
                     {e.hasOverrunPattern && (
                       <Badge variant="destructive" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase" title="Recent estimation overrun pattern — see drill-down">
                         <TrendingDown className="h-2.5 w-2.5" /> Pattern

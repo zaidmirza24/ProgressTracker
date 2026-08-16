@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react"
+import axios from "axios"
+import API_BASE from "../../../../lib/api"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -6,15 +8,37 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { UserPlus, Pencil, AlertCircle, Mail, Plus } from "lucide-react"
+import { UserPlus, Pencil, AlertCircle, Mail, Plus, UserMinus } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import PersonAvatar from "@/components/ui/person-avatar"
 import useOrgStore from "../../../../store/useOrgStore"
 import OnboardingWizard from "./OnboardingWizard"
+import DeactivateUserDialog from "./DeactivateUserDialog"
+import { useAuth } from "../../../../context/AuthContext"
 import { ROLE_VARIANTS, ROLE_LABELS } from "./roleConstants"
 
 const UsersTab = () => {
+  const { user: currentUser } = useAuth()
+  const currentUserId = currentUser?.id || currentUser?._id
+  const [deactivateTarget, setDeactivateTarget] = useState(null)
+  // Open-task count drives whether a handover is required. Fetched lazily on open so
+  // the table itself doesn't pull the whole task list.
+  const [openTaskCount, setOpenTaskCount] = useState(0)
+
+  const requestDeactivate = async (u) => {
+    setOpenTaskCount(0)
+    setDeactivateTarget(u)
+    try {
+      const res = await axios.get(`${API_BASE}/api/tasks?scope=all&assignedTo=${u._id}`)
+      // Daily tasks are handled automatically on deactivation; only assigned work
+      // needs a human to pick a new owner.
+      setOpenTaskCount(res.data.tasks.filter(t => t.status !== "Completed" && !t.isDaily).length)
+    } catch {
+      // Leave at 0 — the server still refuses if a handover turns out to be needed.
+    }
+  }
+
   const users = useOrgStore(s => s.users)
   const departments = useOrgStore(s => s.departments)
   const teams = useOrgStore(s => s.teams)
@@ -103,6 +127,7 @@ const UsersTab = () => {
   }
 
   return (
+    <>
     <Card className="border-border/40 shadow-lg bg-card/30 backdrop-blur-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
         <div>
@@ -167,6 +192,18 @@ const UsersTab = () => {
                       <TableCell className="text-muted-foreground text-sm">{u.team?.name || "—"}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{u.manager?.name || "—"}</TableCell>
                       <TableCell className="text-right">
+                        {/* Self-deactivation is refused server-side too */}
+                        {u._id !== currentUserId && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => requestDeactivate(u)}
+                            title={`Deactivate ${u.name}`}
+                          >
+                            <UserMinus className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => openEdit(u)}>
                           <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                         </Button>
@@ -371,6 +408,15 @@ const UsersTab = () => {
         )}
       </Dialog>
     </Card>
+
+      <DeactivateUserDialog
+        key={deactivateTarget?._id}
+        user={deactivateTarget}
+        open={deactivateTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeactivateTarget(null) }}
+        openTaskCount={openTaskCount}
+      />
+    </>
   )
 }
 

@@ -44,7 +44,7 @@ const ApprovalGatingPanel = ({ detailTask, submitting, updateTaskStatus }) => {
         </Button>
         <Button
           size="sm"
-          className="rounded-lg font-semibold shadow"
+          className="rounded-lg font-semibold shadow bg-green-600 hover:bg-green-700 text-white"
           onClick={() => handleReview("Completed")}
           disabled={submitting || !reviewComment.trim()}
         >

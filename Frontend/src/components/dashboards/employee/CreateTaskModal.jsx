@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { CategorySelect, PrioritySelect, HoursAndDueDateRow } from "../../tasks/TaskFormFields"
 import { getLocalDateString } from "../../../lib/taskFormatters"
+import { taskToForm } from "../../../lib/taskFormState"
+import { CATEGORY_PRESETS } from "../../../lib/taskConstants"
+import { useToast } from "../../../context/ToastContext"
 import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
 
 // Employee's self-assigned create-task dialog. Shares its Category/Priority/
@@ -18,13 +21,22 @@ import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
 // it's passed down rather than made locally independent. `createOpen` is lifted to
 // the shell (its button opens this modal); `taskForm`/`customCategoryActive` stay
 // local — nothing else reads them.
-const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting }) => {
-  const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
+//
+// Also serves EDIT for a task the employee created themselves (mode="edit"). The
+// backend already allowed this (EMPLOYEE_EDITABLE_FIELDS) — the field set is identical
+// to create minus `assignedTo`, which an employee may never change, so one form covers
+// both rather than a near-duplicate component.
+const BLANK = () => ({
+  title: "", description: "", category: "General",
+  priority: "medium", estimatedHours: 0, dueDate: getLocalDateString()
+})
 
-  const [taskForm, setTaskForm] = useState({
-    title: "", description: "", category: "General",
-    priority: "medium", estimatedHours: 0, dueDate: getLocalDateString()
-  })
+const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting, mode = "create", editTask = null, onSave }) => {
+  const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
+  const toast = useToast()
+  const isEdit = mode === "edit"
+
+  const [taskForm, setTaskForm] = useState(BLANK())
   const [customCategoryActive, setCustomCategoryActive] = useState(false)
 
   // The shell's "Create Task" button used to reset this directly on click
@@ -32,25 +44,54 @@ const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting 
   // local to the modal, mirror that exact reset whenever the dialog opens by adjusting
   // state during render (React's recommended alternative to an effect for this) rather
   // than in a useEffect, which would fire a redundant extra render.
-  const [prevCreateOpen, setPrevCreateOpen] = useState(createOpen)
-  if (createOpen !== prevCreateOpen) {
-    setPrevCreateOpen(createOpen)
+  // Same render-time adjustment now also seeds the form from the task being edited.
+  const [prevKey, setPrevKey] = useState(null)
+  const openKey = createOpen ? `${mode}:${editTask?._id || "new"}` : null
+  if (openKey !== prevKey) {
+    setPrevKey(openKey)
     if (createOpen) {
-      setCustomCategoryActive(false)
+      if (isEdit && editTask) {
+        const seeded = taskToForm(editTask)
+        setTaskForm({
+          title: seeded.title, description: seeded.description, category: seeded.category,
+          priority: seeded.priority, estimatedHours: seeded.estimatedHours, dueDate: seeded.dueDate
+        })
+        setCustomCategoryActive(!CATEGORY_PRESETS.includes(editTask.category))
+      } else {
+        setTaskForm(BLANK())
+        setCustomCategoryActive(false)
+      }
     }
   }
 
   const handleCreateTask = async (e) => {
     e.preventDefault()
+
+    if (isEdit) {
+      const result = await onSave({
+        title: taskForm.title,
+        description: taskForm.description,
+        category: taskForm.category,
+        priority: taskForm.priority,
+        estimatedHours: Number(taskForm.estimatedHours) || 0,
+        dueDate: taskForm.dueDate || null
+      })
+      if (result?.success) {
+        setCreateOpen(false)
+        toast.success("Task updated.")
+        if (result.warning) toast.warning(result.warning)
+      }
+      // On failure the dialog stays open with input intact — the global interceptor
+      // has already surfaced why.
+      return
+    }
+
     setSubmitting(true)
     try {
       await axios.post(`${API_BASE}/api/tasks`, taskForm)
       await loadTasks()
       setCreateOpen(false)
-      setTaskForm({
-        title: "", description: "", category: "General",
-        priority: "medium", estimatedHours: 0, dueDate: getLocalDateString()
-      })
+      setTaskForm(BLANK())
       setCustomCategoryActive(false)
     } catch (err) {
       console.error("Error creating self-assigned task:", err)
@@ -63,8 +104,14 @@ const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting 
     <Dialog open={createOpen} onOpenChange={setCreateOpen}>
       <DialogContent className="sm:max-w-[480px] border-border/60">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold tracking-tight text-foreground">Create Self Task</DialogTitle>
-          <DialogDescription>Define a task to work on. It will be assigned to yourself automatically.</DialogDescription>
+          <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
+            {isEdit ? "Edit Task" : "Create Self Task"}
+          </DialogTitle>
+          <DialogDescription>
+            {isEdit
+              ? "Update the details of a task you created."
+              : "Define a task to work on. It will be assigned to yourself automatically."}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleCreateTask} className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -121,7 +168,7 @@ const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting 
               Cancel
             </Button>
             <Button type="submit" className="rounded-lg h-10 shadow font-semibold" disabled={submitting}>
-              {submitting ? "Creating…" : "Add Task"}
+              {submitting ? (isEdit ? "Saving…" : "Creating…") : (isEdit ? "Save Changes" : "Add Task")}
             </Button>
           </DialogFooter>
         </form>

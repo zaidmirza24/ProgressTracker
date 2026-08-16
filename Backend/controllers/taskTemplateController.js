@@ -1,6 +1,7 @@
 import TaskTemplate from "../models/TaskTemplate.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
+import { provisionDailyTasksForAllEmployees } from "../services/dailyTaskService.js"
 
 // GET /api/task-templates — list all (admin only)
 export const getTemplates = asyncHandler(async (req, res) => {
@@ -28,6 +29,11 @@ export const createTemplate = asyncHandler(async (req, res, next) => {
     employees: (scope === "employees" && Array.isArray(employees)) ? employees : [],
     createdBy: req.user.id
   })
+
+  // Provision today's task from this template for every currently-eligible employee
+  // right away, rather than waiting for each employee's next login / the midnight cron
+  // (see services/dailyTaskService.js — same single source of truth for the logic).
+  await provisionDailyTasksForAllEmployees()
 
   const populated = await TaskTemplate.findById(template._id)
     .populate("departments", "name")
@@ -60,6 +66,12 @@ export const updateTemplate = asyncHandler(async (req, res, next) => {
   if (isActive !== undefined) template.isActive = isActive
 
   await template.save()
+
+  // Same immediate-provisioning as create: an edit that (re)activates a template, or
+  // widens/changes who it applies to, should surface today's task right away.
+  if (template.isActive) {
+    await provisionDailyTasksForAllEmployees()
+  }
 
   const populated = await TaskTemplate.findById(template._id)
     .populate("departments", "name")

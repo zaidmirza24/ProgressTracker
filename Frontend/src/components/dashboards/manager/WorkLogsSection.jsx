@@ -1,9 +1,12 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import axios from "axios"
+import API_BASE from "../../../lib/api"
 import { Link } from "react-router-dom"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { FileText, AlertCircle, ArrowUpRight } from "lucide-react"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
@@ -14,6 +17,15 @@ const WorkLogsSection = () => {
   const workLogs = useManagerDashboardStore(s => s.workLogs)
   const employees = useManagerDashboardStore(s => s.employees)
   const [logFilterEmployee, setLogFilterEmployee] = useState("")
+  // Who has actually submitted today. An unenforced daily ritual with no compliance
+  // view quietly stops happening — this is the cheapest way to make that visible.
+  const [todayStatus, setTodayStatus] = useState(null)
+
+  useEffect(() => {
+    axios.get(`${API_BASE}/api/daily-work-logs/today-context`)
+      .then(res => setTodayStatus(res.data))
+      .catch(() => {}) // non-critical; the log table below still renders
+  }, [])
 
   const filteredLogs = logFilterEmployee
     ? workLogs.filter(l => l.employee?._id === logFilterEmployee)
@@ -31,18 +43,38 @@ const WorkLogsSection = () => {
             </Badge>
           </CardTitle>
           <CardDescription>Most recent submissions, all-time — not limited to today</CardDescription>
+          {todayStatus && todayStatus.total > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${
+                todayStatus.missing.length === 0
+                  ? "border-green-500/30 bg-green-500/10 text-green-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+              }`}>
+                {todayStatus.submitted.length} of {todayStatus.total} submitted today
+              </span>
+              {todayStatus.missing.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  Still to submit: {todayStatus.missing.map(m => m.name).join(", ")}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <select
-            value={logFilterEmployee}
-            onChange={e => setLogFilterEmployee(e.target.value)}
-            className="h-10 rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[200px]"
+          <Select
+            value={logFilterEmployee || "all"}
+            onValueChange={value => setLogFilterEmployee(value === "all" ? "" : value)}
           >
-            <option value="" className="bg-card text-foreground">— Filter Employee —</option>
-            {employees.filter(e => e.role === "employee").map(emp => (
-              <option key={emp._id} value={emp._id} className="bg-card text-foreground">{emp.name}</option>
-            ))}
-          </select>
+            <SelectTrigger className="h-10 w-auto max-w-[200px] rounded-lg border-input bg-transparent px-3 py-1.5 text-sm shadow-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">— Filter Employee —</SelectItem>
+              {employees.filter(e => e.role === "employee").map(emp => (
+                <SelectItem key={emp._id} value={emp._id}>{emp.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button asChild variant="outline" size="sm" className="h-10 rounded-lg text-xs font-semibold gap-1.5">
             <Link to="/work-logs">
               View All <ArrowUpRight className="h-3.5 w-3.5" />

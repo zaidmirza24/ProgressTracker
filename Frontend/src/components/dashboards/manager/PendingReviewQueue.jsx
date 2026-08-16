@@ -3,14 +3,15 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { UserCheck, User } from "lucide-react"
-import { formatTrackedTime, formatOverrun } from "../../../lib/taskFormatters"
+import { formatTrackedTime, formatOverrun, formatRework } from "../../../lib/taskFormatters"
+import TaskActionMenu from "../../tasks/TaskActionMenu"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
 // In-Review queue with inline approve/reject. `updateTaskStatus` and `submitting`
 // come from the shared useTaskStatusMutation instance owned by the shell (also used
 // by TeamTasksTable and TaskDetailModal), so an approve/reject here stays in sync
 // everywhere. `setDetailTask` opens the shared Task Detail modal.
-const PendingReviewQueue = ({ updateTaskStatus, submitting, setDetailTask }) => {
+const PendingReviewQueue = ({ updateTaskStatus, submitting, setDetailTask, taskActions }) => {
   const tasks = useManagerDashboardStore(s => s.tasks)
   const [inlineRejectId, setInlineRejectId] = useState(null)
   const [inlineRejectComment, setInlineRejectComment] = useState("")
@@ -51,9 +52,17 @@ const PendingReviewQueue = ({ updateTaskStatus, submitting, setDetailTask }) => 
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
+                  {taskActions && (
+                    <TaskActionMenu task={t} {...taskActions} disabled={submitting} className="h-6 w-6 -mr-1 -mt-1" />
+                  )}
                   {t.totalTrackedSeconds > 0 && (
                     <Badge variant="outline" className="font-mono text-[10px] border-violet-500/20 text-violet-400">
                       {formatTrackedTime(t.totalTrackedSeconds)} tracked
+                    </Badge>
+                  )}
+                  {formatRework(t) && (
+                    <Badge variant="outline" className="text-[10px] font-bold border-amber-500/40 text-amber-400" title="This task has been sent back before">
+                      {formatRework(t)}
                     </Badge>
                   )}
                   {formatOverrun(t) && (

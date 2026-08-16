@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card"
 import { useNavigate } from "react-router-dom"
-import { UserCheck, Gauge, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { UserCheck, Gauge, TrendingDown, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react"
 import { isTaskOverdue, getEmployeeCapacity } from "../../../lib/taskHelpers"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
@@ -41,10 +41,12 @@ const AttentionZone = () => {
 
   const reviewCount = tasks.filter(t => t.status === "In Review").length
   const overdueCount = tasks.filter(isTaskOverdue).length
+  // Blocked work is usually the fastest thing a manager can actually fix.
+  const blockedCount = tasks.filter(t => t.isBlocked && t.status !== "Completed").length
   const overCapacityCount = employees.filter(emp => getEmployeeCapacity(emp, tasks).isOverCapacity).length
   const patternCount = report?.employeeReport?.filter(r => r.hasOverrunPattern).length ?? 0
 
-  const totalFlags = reviewCount + overdueCount + overCapacityCount + patternCount
+  const totalFlags = reviewCount + overdueCount + blockedCount + overCapacityCount + patternCount
 
   return (
     <div className="space-y-3">
@@ -67,10 +69,17 @@ const AttentionZone = () => {
             tone="warning"
           />
           <AttentionItem
+            icon={ShieldAlert}
+            count={blockedCount}
+            label={blockedCount === 1 ? "task blocked" : "tasks blocked"}
+            to="/team-tasks?filter=blocked"
+            tone="destructive"
+          />
+          <AttentionItem
             icon={AlertTriangle}
             count={overdueCount}
             label={overdueCount === 1 ? "task overdue" : "tasks overdue"}
-            to="/team-tasks"
+            to="/team-tasks?filter=overdue"
             tone="destructive"
           />
           <AttentionItem

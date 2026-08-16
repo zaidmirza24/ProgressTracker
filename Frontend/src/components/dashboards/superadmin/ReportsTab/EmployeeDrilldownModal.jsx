@@ -1,7 +1,8 @@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { formatUtilization, formatQualityRate } from "../../../../lib/taskFormatters"
 import { Badge } from "@/components/ui/badge"
-import { Briefcase, User, AlertTriangle, Repeat, Clock3, TrendingDown } from "lucide-react"
+import { Briefcase, User, AlertTriangle, Repeat, Clock3, TrendingDown, ShieldCheck } from "lucide-react"
 import useReportsStore from "../../../../store/useReportsStore"
 
 const EmployeeDrilldownModal = () => {
@@ -90,11 +91,11 @@ const EmployeeDrilldownModal = () => {
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Planned Utilization</span>
-                    <span className="font-mono font-bold">{selectedEmployee.plannedUtilizationPct ?? 0}%</span>
+                    <span className="font-mono font-bold">{formatUtilization(selectedEmployee.plannedUtilizationPct)}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Actual Utilization</span>
-                    <span className="font-mono font-bold">{selectedEmployee.actualUtilizationPct ?? 0}%</span>
+                    <span className="font-mono font-bold">{formatUtilization(selectedEmployee.actualUtilizationPct)}</span>
                   </div>
                   {selectedEmployee.isCapacityOverrunToday && (
                     <Badge variant="destructive" className="text-[9px] font-bold uppercase">Over Capacity Today</Badge>
@@ -115,7 +116,7 @@ const EmployeeDrilldownModal = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Avg. Age</span>
-                      <span className="font-mono font-bold">{selectedEmployee.pendingBacklogAvgAgeDays ?? 0}d</span>
+                      <span className="font-mono font-bold">{selectedEmployee.blockedBacklogAvgAgeDays ?? 0}d</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Oldest</span>
@@ -126,6 +127,68 @@ const EmployeeDrilldownModal = () => {
                   <p className="text-xs text-muted-foreground italic">No pending backlog.</p>
                 )}
               </div>
+            </div>
+
+            {/* Quality / Rework (Locked Logic §9) — approved-first-time vs sent back,
+                always traceable to the specific tasks and the feedback given. */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-bold flex items-center gap-1.5 border-b border-border/40 pb-2 text-foreground/90">
+                <ShieldCheck className={`h-4 w-4 ${selectedEmployee.hasQualitySignal ? "text-amber-400" : "text-primary"}`} />
+                Quality & Rework
+              </h4>
+
+              {selectedEmployee.reviewedTaskCount > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-muted/20 border border-border/40 rounded-xl p-3 space-y-1">
+                      <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wide">First-pass Approval</div>
+                      <div className="text-lg font-black text-foreground">{formatQualityRate(selectedEmployee.firstPassApprovalRate)}</div>
+                      <div className="text-[9px] text-muted-foreground">
+                        of {selectedEmployee.reviewedTaskCount} reviewed task{selectedEmployee.reviewedTaskCount === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <div className="bg-muted/20 border border-border/40 rounded-xl p-3 space-y-1">
+                      <div className="text-[9px] uppercase font-bold text-muted-foreground tracking-wide">Rework Rate</div>
+                      <div className="text-lg font-black text-foreground">{formatQualityRate(selectedEmployee.reworkRate)}</div>
+                      <div className="text-[9px] text-muted-foreground">sent back at least once</div>
+                    </div>
+                  </div>
+                  {selectedEmployee.hasQualitySignal && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/25 bg-amber-500/5 text-xs">
+                      <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                      <span className="text-muted-foreground">
+                        Most reviewed work is coming back at least once. That often points at unclear
+                        requirements or acceptance criteria as much as at the work itself — the tasks below
+                        show what was actually asked for.
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">
+                  No completed work has gone through review yet, so there's no first-pass rate to report.
+                  Daily and self-assigned tasks skip review by design.
+                </p>
+              )}
+
+              {selectedEmployee.reworkedTasks?.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide">Tasks sent back</div>
+                  {selectedEmployee.reworkedTasks.map(t => (
+                    <div key={t._id} className="text-xs bg-muted/15 border border-border/30 rounded-lg px-2.5 py-2 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-foreground/90 truncate">{t.title}</span>
+                        <span className="font-mono font-bold text-amber-400 shrink-0">×{t.reworkCount}</span>
+                      </div>
+                      {t.lastFeedback && (
+                        <p className="text-[11px] text-muted-foreground italic border-l-2 border-amber-500/30 pl-2 leading-relaxed">
+                          "{t.lastFeedback}"
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Estimation Pattern (Locked Logic §10) — a signal, not punitive; always

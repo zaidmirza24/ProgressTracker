@@ -29,6 +29,7 @@ const sendErrorDev = (err, req, res) => {
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
+    ...(typeof err.code === "string" && { code: err.code }),
     error: err,
     stack: err.stack
   })
@@ -38,7 +39,10 @@ const sendErrorProd = (err, req, res) => {
   if (err.isOperational) {
     res.status(err.statusCode).json({
       status: err.status,
-      error: err.message
+      error: err.message,
+      // Only AppError's string codes are surfaced — Mongoose puts numeric codes
+      // (e.g. 11000) on its own errors, which must never leak to the client.
+      ...(typeof err.code === "string" && { code: err.code })
     })
   } else {
     // Unintended errors or server faults: log internally and send generic response

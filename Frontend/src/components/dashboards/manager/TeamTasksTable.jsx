@@ -1,40 +1,74 @@
 import { useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { motion, AnimatePresence } from "motion/react"
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
-import { Clock, AlertCircle, Calendar } from "lucide-react"
-import { STATUS_VARIANTS, PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { formatTrackedTime, formatOverrun } from "../../../lib/taskFormatters"
+import { Clock, AlertCircle, Calendar, X } from "lucide-react"
+import { STATUS_VARIANTS, PRIORITY_VARIANTS, formatStatus } from "../../../lib/taskConstants"
+import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked, formatRework } from "../../../lib/taskFormatters"
 import { isSelfCreated, isTaskOverdue, getNextStatusesForManager } from "../../../lib/taskHelpers"
+import TaskActionMenu from "../../tasks/TaskActionMenu"
+import ScopeToggle from "../../tasks/ScopeToggle"
+import { filterTasksByScope, SCOPE_LABELS, TASK_SCOPES } from "../../../lib/taskScope"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 
 // Searchable task table with inline status-transition dropdown. `updateTaskStatus`
 // comes from the shell's shared useTaskStatusMutation instance; `setDetailTask` opens
 // the shared Task Detail modal (row click, or an In Review row's dropdown).
-const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
+const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading, taskActions, submitting }) => {
   const tasks = useManagerDashboardStore(s => s.tasks)
   const [searchQuery, setSearchQuery] = useState("")
+  // Filter lives in the URL, not local state — it's shareable, bookmarkable, and lets
+  // the Attention Zone deep-link straight into "the overdue ones" (§24).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeFilter = searchParams.get("filter") || ""
+  // Scope narrows the VIEW only — the store keeps every task, because the capacity bars
+  // and 7-day forecast on the Overview page are derived from that same array and need
+  // future-dated work. Kept in the URL alongside `filter` so a view is shareable (§24).
+  const scopeParam = searchParams.get("scope")
+  const scope = TASK_SCOPES.includes(scopeParam) ? scopeParam : "week"
 
-  const filteredTasks = tasks.filter(t => {
+  const setScope = (next) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === "week") params.delete("scope")
+    else params.set("scope", next)
+    setSearchParams(params, { replace: true })
+  }
+
+  const clearFilter = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete("filter")
+    setSearchParams(next, { replace: true })
+  }
+
+  const FILTER_LABELS = { overdue: "Overdue", review: "Awaiting review", pending: "Paused", blocked: "Blocked" }
+  const matchesFilter = (t) => {
+    if (activeFilter === "overdue") return isTaskOverdue(t)
+    if (activeFilter === "review") return t.status === "In Review"
+    if (activeFilter === "pending") return t.status === "Pending"
+    if (activeFilter === "blocked") return Boolean(t.isBlocked)
+    return true
+  }
+
+  const scopedTasks = filterTasksByScope(tasks, scope)
+
+  const filteredTasks = scopedTasks.filter(t => {
     const matchesSearch = searchQuery
       ? (t.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
          t.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
          t.priority?.toLowerCase().includes(searchQuery.toLowerCase()) ||
          t.assignedTo?.name?.toLowerCase().includes(searchQuery.toLowerCase()))
       : true
-    return matchesSearch
+    return matchesSearch && matchesFilter(t)
   })
 
   return (
     <Card className="border-border/40 shadow-xl bg-card/40 backdrop-blur-sm">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <CardTitle className="text-xl font-bold">Team Tasks Tracker</CardTitle>
-          <CardDescription>Overall tracking of work assigned to employees</CardDescription>
-        </div>
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-4">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <Input
             placeholder="🔍 Search tasks..."
@@ -42,8 +76,19 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
             onChange={e => setSearchQuery(e.target.value)}
             className="h-8 text-xs rounded-lg bg-background/50 border-border/40 max-w-[200px]"
           />
-          <Badge variant="outline" className="h-6 font-mono rounded-lg shrink-0">
-            {tasks.length} total
+          <ScopeToggle scope={scope} onChange={setScope} />
+          {activeFilter && (
+            <button
+              type="button"
+              onClick={clearFilter}
+              className="h-6 px-2 inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 text-primary text-[11px] font-bold shrink-0 hover:bg-primary/20 transition-colors"
+            >
+              {FILTER_LABELS[activeFilter] || activeFilter}: {filteredTasks.length}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          <Badge variant="outline" className="h-6 font-mono rounded-lg shrink-0" title={`${tasks.length} tasks in total across all time`}>
+            {scopedTasks.length}{scope !== "all" && ` of ${tasks.length}`}
           </Badge>
         </div>
       </CardHeader>
@@ -58,12 +103,13 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                 <TableHead className="font-semibold text-foreground/80">Due Date</TableHead>
                 <TableHead className="font-semibold text-foreground/80">Status Workflow</TableHead>
                 <TableHead className="font-semibold text-foreground/80 text-right">Progress</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12">
+                  <TableCell colSpan={7} className="text-center py-12">
                     <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <Clock className="h-6 w-6 animate-spin text-primary" />
                       <span className="text-sm">Loading tasks...</span>
@@ -72,16 +118,29 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                 </TableRow>
               ) : filteredTasks.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-16">
+                  <TableCell colSpan={7} className="text-center py-16">
                     <div className="max-w-[320px] mx-auto flex flex-col items-center justify-center gap-3">
                       <div className="h-12 w-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
                         <AlertCircle className="h-6 w-6" />
                       </div>
                       <div className="space-y-1">
-                        <h4 className="font-bold text-foreground">No tasks found</h4>
+                        <h4 className="font-bold text-foreground">
+                          {activeFilter ? `Nothing ${(FILTER_LABELS[activeFilter] || activeFilter).toLowerCase()}` : "No tasks found"}
+                        </h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          {searchQuery ? `We couldn't find any tasks matching "${searchQuery}".` : 'Click "Create Task" to assign your first task to the team.'}
+                          {searchQuery
+                            ? `We couldn't find any tasks matching "${searchQuery}".`
+                            : activeFilter
+                              ? "Nothing in the team's tasks matches this filter right now — which is good news."
+                              : scope !== "all"
+                                ? `No team tasks fall within ${SCOPE_LABELS[scope].toLowerCase()}. Switch to All time to see everything.`
+                                : 'Click "Create Task" to assign your first task to the team.'}
                         </p>
+                        {activeFilter && (
+                          <button type="button" onClick={clearFilter} className="text-xs font-semibold text-primary hover:underline pt-1">
+                            Show all tasks
+                          </button>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -109,6 +168,21 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                             {t.title}
                             {selfCreated && (
                               <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
+                            )}
+                            {t.isCarryForward && (
+                              <Badge variant="outline" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase border-amber-500/30 text-amber-400 bg-amber-500/5">
+                                {formatCarryForwardDate(t) || "Carried Over"}
+                              </Badge>
+                            )}
+                            {formatRework(t) && (
+                              <Badge variant="outline" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase border-amber-500/40 text-amber-400" title="Sent back for rework before">
+                                {formatRework(t)}
+                              </Badge>
+                            )}
+                            {formatBlocked(t) && (
+                              <Badge variant="destructive" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase" title={t.blockedReason}>
+                                {formatBlocked(t)}
+                              </Badge>
                             )}
                             {formatOverrun(t) && (
                               <Badge variant="destructive" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">
@@ -154,24 +228,28 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                       </TableCell>
                       <TableCell onClick={e => e.stopPropagation()}>
                         {nextOptions.length > 0 ? (
-                          <select
+                          <Select
                             value={t.status}
-                            onChange={e => {
+                            onValueChange={value => {
                               // Approving/reworking an In Review task requires feedback — open the modal instead
                               if (t.status === "In Review") {
                                 setDetailTask(t)
                                 return
                               }
                               // Update other transitions inline, optimistically
-                              updateTaskStatus(t._id, e.target.value, "")
+                              updateTaskStatus(t._id, value, "")
                             }}
-                            className="h-8 rounded-lg border border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           >
-                            <option value={t.status}>{t.status}</option>
-                            {nextOptions.map(opt => (
-                              <option key={opt} value={opt}>➔ {opt}</option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="h-8 w-auto min-w-[150px] gap-1.5 rounded-lg border-input bg-card text-foreground px-2 py-0.5 text-xs font-semibold">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={t.status}>{formatStatus(t.status)}</SelectItem>
+                              {nextOptions.map(opt => (
+                                <SelectItem key={opt} value={opt}>➔ {formatStatus(opt)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         ) : (
                           <Badge variant={STATUS_VARIANTS[t.status] || "default"} className="text-[10px] py-0.5 px-2 rounded-md font-bold">
                             {t.status}
@@ -190,6 +268,11 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading }) => {
                             {t.progressPercentage}%
                           </span>
                         </div>
+                      </TableCell>
+                      <TableCell onClick={e => e.stopPropagation()} className="text-right">
+                        {taskActions && (
+                          <TaskActionMenu task={t} {...taskActions} disabled={submitting} />
+                        )}
                       </TableCell>
                       </motion.tr>
                     )

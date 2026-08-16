@@ -2,6 +2,7 @@ import express from "express"
 import cors from "cors"
 import dotenv from "dotenv"
 import mongoose from "mongoose"
+import cron from "node-cron"
 import authRoutes from "./routes/auth.js"
 import departmentRoutes from "./routes/departmentRoutes.js"
 import teamRoutes from "./routes/teamRoutes.js"
@@ -10,8 +11,10 @@ import taskRoutes from "./routes/taskRoutes.js"
 import taskTemplateRoutes from "./routes/taskTemplateRoutes.js"
 import workSessionRoutes from "./routes/workSessionRoutes.js"
 import dailyWorkLogRoutes from "./routes/dailyWorkLogRoutes.js"
+import calendarRoutes from "./routes/calendarRoutes.js"
 import globalErrorHandler from "./middleware/errorMiddleware.js"
 import AppError from "./utils/appError.js"
+import { provisionDailyTasksForAllEmployees } from "./services/dailyTaskService.js"
 
 // Handle synchronous errors that occur outside Express context
 process.on("uncaughtException", (err) => {
@@ -47,6 +50,21 @@ mongoose.connect(MONGODB_URI)
   .then(() => console.log("Connected to MongoDB successfully"))
   .catch((err) => console.error("MongoDB connection error:", err))
 
+// Midnight daily-task provisioning: creates today's daily tasks for every active
+// employee (and carries forward yesterday's incomplete ones) so today's tasks and the
+// capacity numbers derived from them (Locked Logic §6) exist before anyone logs in,
+// rather than depending on each employee opening their dashboard first.
+// GET /api/tasks/daily (see taskController.js) still self-heals per-employee on login
+// for the same day in case this job hasn't run yet (e.g. server was down at midnight).
+// Non-working days (weekends/holidays) and absent employees are skipped inside
+// provisionDailyTasksForAllEmployees, so the same rule applies to both entry points.
+cron.schedule("0 0 * * *", () => {
+  console.log("Running scheduled daily task provisioning...")
+  provisionDailyTasksForAllEmployees().catch(err =>
+    console.error("Scheduled daily task provisioning failed:", err.message)
+  )
+}, { timezone: process.env.DAILY_TASK_CRON_TZ || "Asia/Kolkata" })
+
 // Register Route Handlers
 app.use("/api/auth", authRoutes)
 app.use("/api/departments", departmentRoutes)
@@ -56,6 +74,7 @@ app.use("/api/tasks", taskRoutes)
 app.use("/api/task-templates", taskTemplateRoutes)
 app.use("/api/work-sessions", workSessionRoutes)
 app.use("/api/daily-work-logs", dailyWorkLogRoutes)
+app.use("/api/calendar", calendarRoutes)
 
 // Health-check API routes
 app.get("/", (req, res) => {

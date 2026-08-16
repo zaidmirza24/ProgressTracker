@@ -10,7 +10,7 @@ const AnalyticsReport = () => {
   const statusData = [
     { name: "Not Started", value: healthReport.notStartedTasks, color: "#94a3b8" },
     { name: "In Progress", value: healthReport.inProgressTasks, color: "#38bdf8" },
-    { name: "Pending", value: healthReport.pendingTasks, color: "#fbbf24" },
+    { name: "Paused", value: healthReport.pendingTasks, color: "#fbbf24" },
     { name: "In Review", value: healthReport.inReviewTasks, color: "#fb7185" },
     { name: "Completed", value: healthReport.completedTasks, color: "#4ade80" }
   ].filter(d => d.value > 0)

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import axios from "axios"
 import API_BASE from "../lib/api"
 import { useAuth } from "../context/AuthContext"
-import { motion } from "motion/react"
+import { useToast } from "../context/ToastContext"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Plus, FileText, Clock, ClipboardList, Loader2, Calendar, AlertCircle } from "lucide-react"
@@ -27,6 +27,7 @@ const BLANK_FORM = {
 
 const WorkLogs = () => {
   const { user } = useAuth()
+  const toast = useToast()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
@@ -34,6 +35,7 @@ const WorkLogs = () => {
   const [submitting, setSubmitting] = useState(false)
   const [prefilling, setPrefilling] = useState(false)
   const [detailLog, setDetailLog] = useState(null)
+  const [todayContext, setTodayContext] = useState(null)
 
   const isManager = user?.role === "manager" || user?.role === "super_admin"
   const isEmployee = user?.role === "employee"
@@ -81,10 +83,23 @@ const WorkLogs = () => {
     setCreateOpen(true)
     setPrefilling(true)
     try {
-      const res = await axios.get(`${API_BASE}/api/work-sessions/today-hours`)
-      setForm(f => ({ ...f, hoursWorked: res.data.hoursWorked }))
+      // The system already knows what was completed today and how long was tracked —
+      // prefill both so this is a review-and-confirm, not a retype.
+      const res = await axios.get(`${API_BASE}/api/daily-work-logs/today-context`)
+      const { completedToday = [], trackedHours = 0, alreadySubmitted } = res.data
+      setTodayContext(res.data)
+      if (alreadySubmitted) {
+        setCreateOpen(false)
+        toast.error("You've already submitted a work log for today.")
+        return
+      }
+      setForm(f => ({
+        ...f,
+        hoursWorked: trackedHours,
+        tasksCompleted: completedToday.map(t => t.title).join(", ")
+      }))
     } catch {
-      // Leave blank if fetch fails
+      // Leave blank if the fetch fails — the form still works unaided.
     } finally {
       setPrefilling(false)
     }
@@ -98,6 +113,8 @@ const WorkLogs = () => {
       await loadLogs()
       setCreateOpen(false)
       setForm(BLANK_FORM)
+      setTodayContext(null)
+      toast.success("Work log submitted.")
     } catch (err) {
       console.error("Error submitting log:", err)
     } finally {
@@ -181,16 +198,20 @@ const WorkLogs = () => {
       {isManager && employees.length > 0 && (
         <div className="flex items-center gap-3 bg-muted/20 px-4 py-3 rounded-xl border border-border/40 w-fit">
           <Label className="text-xs uppercase font-bold tracking-widest text-muted-foreground">Filter Employee:</Label>
-          <select
-            value={filterEmployee}
-            onChange={e => handleFilterChange(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          <Select
+            value={filterEmployee || "all"}
+            onValueChange={value => handleFilterChange(value === "all" ? "" : value)}
           >
-            <option value="" className="bg-card text-foreground">— All Employees —</option>
-            {employees.map(emp => (
-              <option key={emp._id} value={emp._id} className="bg-card text-foreground">{emp.name}</option>
-            ))}
-          </select>
+            <SelectTrigger className="h-9 w-auto rounded-lg border-input bg-transparent px-3 py-1 text-sm shadow-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">— All Employees —</SelectItem>
+              {employees.map(emp => (
+                <SelectItem key={emp._id} value={emp._id}>{emp.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -334,12 +355,31 @@ const WorkLogs = () => {
                   className="h-10 rounded-lg"
                   required
                 />
-                {!prefilling && form.hoursWorked > 0 && (
-                  <p className="text-[10px] text-primary/80 italic font-medium">Pre-filled from today's timer sessions</p>
-                )}
+                {!prefilling && todayContext && (() => {
+                  const tracked = todayContext.trackedHours ?? 0
+                  const entered = Number(form.hoursWorked) || 0
+                  const diff = Math.abs(entered - tracked)
+                  // A big gap between logged and tracked hours isn't wrong — it's just
+                  // worth noticing before submitting (untracked meetings, forgotten timer).
+                  if (diff >= 1) {
+                    return (
+                      <p className="text-[10px] text-amber-400 font-medium">
+                        Your timer recorded {tracked}h today — that's {diff.toFixed(2)}h different from what you've entered.
+                      </p>
+                    )
+                  }
+                  return <p className="text-[10px] text-primary/80 italic font-medium">Pre-filled from today's timer sessions ({tracked}h)</p>
+                })()}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="log-tasks" className="text-foreground/80 font-medium">Tasks Completed</Label>
+                <Label htmlFor="log-tasks" className="text-foreground/80 font-medium">
+                  Tasks Completed
+                  {todayContext?.completedToday?.length > 0 && (
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                      · {todayContext.completedToday.length} filled in from your completed tasks
+                    </span>
+                  )}
+                </Label>
                 <Input
                   id="log-tasks"
                   placeholder="e.g. AUTH-01, UI-03..."

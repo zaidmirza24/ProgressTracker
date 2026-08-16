@@ -4,12 +4,11 @@ import { useAuth } from "../context/AuthContext"
 import { useTimer } from "../context/TimerContext"
 import { useTheme } from "../context/ThemeContext"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  ClipboardList, Timer, FileText, Network,
+  ClipboardList, FileText, Network,
   LayoutDashboard, LogOut, ChevronRight, BarChart3,
   Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon, TrendingUp
 } from "lucide-react"
@@ -35,9 +34,7 @@ const ROLE_CONFIG = {
       { to: "/team-tasks", icon: ClipboardList, label: "Team Tasks" },
       { to: "/work-logs", icon: FileText, label: "Work Logs" },
     ],
-    placeholders: [
-      { icon: BarChart3, label: "Team Reports" },
-    ]
+    placeholders: []
   },
   employee: {
     label: "Employee",
@@ -47,9 +44,7 @@ const ROLE_CONFIG = {
       { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
       { to: "/work-logs", icon: FileText, label: "Work Log" },
     ],
-    placeholders: [
-      { icon: Timer, label: "Active Timer" },
-    ]
+    placeholders: []
   }
 }
 

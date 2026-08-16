@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, Clock3, Gauge, TrendingDown, ArrowUpRight } from "lucide-react"
-import { formatHours } from "../../../lib/taskFormatters"
+import { formatHours, formatQualityRate } from "../../../lib/taskFormatters"
 import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
 
 // Personal history/performance, scoped to the logged-in employee only (backend
@@ -43,15 +43,25 @@ const MyProgressSection = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Stat label="Daily Completion" value={`${report.dailyCompletionRate ?? 0}%`} />
           <Stat label="Assigned Completion" value={`${report.assignedCompletionRate ?? 0}%`} />
-          <Stat label="Estimation Accuracy" value={`${report.estimationAccuracy ?? 100}%`} sub="Estimated vs tracked" />
+          <Stat
+            label="First-pass Approval"
+            value={formatQualityRate(report.firstPassApprovalRate)}
+            sub={report.reviewedTaskCount > 0 ? `of ${report.reviewedTaskCount} reviewed` : "no reviewed work yet"}
+          />
           <Stat label="Avg. Resolution" value={`${report.avgResolutionDays ?? 0}d`} sub="Creation to completion" />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/30">
-          {report.pending > 0 && (
-            <Badge variant="outline" className="text-[10px] font-semibold gap-1.5 border-amber-500/30 text-amber-400">
+          {(report.pausedCount ?? report.pending) > 0 && (
+            <Badge variant="outline" className="text-[10px] font-semibold gap-1.5 border-border/50 text-muted-foreground">
               <Clock3 className="h-3 w-3" />
-              {report.pending} pending · avg {report.pendingBacklogAvgAgeDays ?? 0}d old
+              {report.pausedCount ?? report.pending} paused
+            </Badge>
+          )}
+          {(report.blockedCount ?? 0) > 0 && (
+            <Badge variant="outline" className="text-[10px] font-semibold gap-1.5 border-destructive/30 text-destructive">
+              <Clock3 className="h-3 w-3" />
+              {report.blockedCount} blocked · avg {report.blockedBacklogAvgAgeDays ?? 0}d
             </Badge>
           )}
           {report.isCapacityOverrunToday && (

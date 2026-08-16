@@ -6,10 +6,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Repeat, Plus, Pencil, Trash2, Search, X, Users } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import useTaskTemplatesStore from "../../../store/useTaskTemplatesStore"
+import { useToast } from "../../../context/ToastContext"
 import PersonAvatar from "@/components/ui/person-avatar"
+import { PrioritySelect } from "../../tasks/TaskFormFields"
 
 // Searchable, filterable multi-select for hand-picking individual employees on an
 // "employees"-scoped template. Selected people surface as removable chips up top so
@@ -155,6 +158,7 @@ const TaskTemplatesTab = () => {
   const createTemplate = useTaskTemplatesStore(s => s.createTemplate)
   const updateTemplate = useTaskTemplatesStore(s => s.updateTemplate)
   const deleteTemplate = useTaskTemplatesStore(s => s.deleteTemplate)
+  const toast = useToast()
 
   const [modal, setModal] = useState(null) // null | "create" | template object
   const [form, setForm] = useState({
@@ -202,11 +206,11 @@ const TaskTemplatesTab = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (form.scope === "department" && form.departments.length === 0) {
-      alert("Please select at least one department.")
+      toast.error("Please select at least one department.")
       return
     }
     if (form.scope === "employees" && form.employees.length === 0) {
-      alert("Please select at least one employee.")
+      toast.error("Please select at least one employee.")
       return
     }
     setSaving(true)
@@ -366,18 +370,11 @@ const TaskTemplatesTab = () => {
                     placeholder="e.g. Daily Check"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-foreground/80 font-medium">Priority</Label>
-                  <select
-                    value={form.priority}
-                    onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}
-                    className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="low" className="bg-card text-foreground">Low</option>
-                    <option value="medium" className="bg-card text-foreground">Medium</option>
-                    <option value="high" className="bg-card text-foreground">High</option>
-                  </select>
-                </div>
+                <PrioritySelect
+                  priority={form.priority}
+                  onChange={value => setForm(f => ({ ...f, priority: value }))}
+                  idPrefix="template"
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -391,15 +388,19 @@ const TaskTemplatesTab = () => {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-foreground/80 font-medium">Scope</Label>
-                  <select
+                  <Select
                     value={form.scope}
-                    onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}
-                    className="flex h-10 w-full rounded-lg border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onValueChange={value => setForm(f => ({ ...f, scope: value }))}
                   >
-                    <option value="global" className="bg-card text-foreground">Global (All Employees)</option>
-                    <option value="department" className="bg-card text-foreground">Department Specific</option>
-                    <option value="employees" className="bg-card text-foreground">Specific Employees</option>
-                  </select>
+                    <SelectTrigger className="h-10 rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="global">Global (All Employees)</SelectItem>
+                      <SelectItem value="department">Department Specific</SelectItem>
+                      <SelectItem value="employees">Specific Employees</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

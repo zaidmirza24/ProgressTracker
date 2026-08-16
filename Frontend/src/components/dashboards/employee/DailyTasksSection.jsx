@@ -2,7 +2,7 @@ import { useTimer } from "../../../context/TimerContext"
 import { Badge } from "@/components/ui/badge"
 import { Play, Pause, Check, Repeat, ArrowRightCircle } from "lucide-react"
 import { PRIORITY_VARIANTS } from "../../../lib/taskConstants"
-import { formatTrackedTime, formatOverrun } from "../../../lib/taskFormatters"
+import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
 import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
 
 // Employee-unique "Today's Daily Tasks" grid (no Manager equivalent). Relocated
@@ -80,13 +80,18 @@ const DailyTasksSection = ({ setDetailTask }) => {
                     </Badge>
                     {t.isCarryForward && (
                       <Badge variant="outline" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase text-amber-400 border-amber-400/40">
-                        Carried
+                        {formatCarryForwardDate(t) || "Carried"}
                       </Badge>
                     )}
                     {t.totalTrackedSeconds > 0 && (
                       <span className="text-[10px] text-muted-foreground font-medium">
                         {formatTrackedTime(t.totalTrackedSeconds)} tracked
                       </span>
+                    )}
+                    {formatBlocked(t) && (
+                      <Badge variant="destructive" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase" title={t.blockedReason}>
+                        {formatBlocked(t)}
+                      </Badge>
                     )}
                     {formatOverrun(t) && (
                       <Badge variant="destructive" className="text-[9px] py-0 px-1.5 rounded-sm font-bold uppercase">

@@ -17,6 +17,8 @@ const useOrgStore = create((set, get) => ({
     try {
       const res = await axios.get(`${API_BASE}/api/departments`)
       set({ departments: res.data.departments })
+    } catch (err) {
+      console.error("Error loading departments:", err)
     } finally {
       set({ deptLoading: false })
     }
@@ -39,6 +41,8 @@ const useOrgStore = create((set, get) => ({
         axios.get(`${API_BASE}/api/departments`)
       ])
       set({ teams: tRes.data.teams, departments: dRes.data.departments })
+    } catch (err) {
+      console.error("Error loading teams:", err)
     } finally {
       set({ teamsLoading: false })
     }
@@ -62,6 +66,8 @@ const useOrgStore = create((set, get) => ({
         axios.get(`${API_BASE}/api/teams`)
       ])
       set({ users: uRes.data.users, departments: dRes.data.departments, teams: tRes.data.teams })
+    } catch (err) {
+      console.error("Error loading users:", err)
     } finally {
       set({ usersLoading: false })
     }
@@ -71,6 +77,19 @@ const useOrgStore = create((set, get) => ({
     const res = await axios.post(`${API_BASE}/api/users`, payload)
     await get().fetchUsers()
     return res.data.user
+  },
+
+  // Soft-delete (Core Rule 2). `reassignTo` is required when the person still has open
+  // assigned tasks — the server refuses otherwise rather than stranding the work.
+  deactivateUser: async (id, reassignTo = null) => {
+    try {
+      const res = await axios.patch(`${API_BASE}/api/users/${id}/deactivate`, { reassignTo })
+      await get().fetchUsers()
+      return { success: true, ...res.data }
+    } catch (err) {
+      console.error("Error deactivating user:", err)
+      return { success: false, code: err.response?.data?.code }
+    }
   },
 
   updateUser: async (id, payload) => {

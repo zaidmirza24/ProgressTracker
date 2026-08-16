@@ -17,6 +17,7 @@ import EmployeeDrilldownModal from "./EmployeeDrilldownModal"
 const ReportsTab = () => {
   const reports = useReportsStore(s => s.reports)
   const loading = useReportsStore(s => s.loading)
+  const error = useReportsStore(s => s.error)
   const activeSubTab = useReportsStore(s => s.activeSubTab)
   const timeframe = useReportsStore(s => s.timeframe)
   const startDate = useReportsStore(s => s.startDate)
@@ -30,6 +31,21 @@ const ReportsTab = () => {
   useEffect(() => {
     fetchReports()
   }, [timeframe, startDate, endDate])
+
+  if (error && !reports) {
+    return (
+      <Card className="border-destructive/30 bg-destructive/5">
+        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+          <AlertTriangle className="h-8 w-8 text-destructive" />
+          <div>
+            <p className="font-semibold text-foreground">Couldn't load reports</p>
+            <p className="text-sm text-muted-foreground">Something went wrong fetching the latest data. Please try again.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchReports}>Retry</Button>
+        </CardContent>
+      </Card>
+    )
+  }
 
   if (loading || !reports) {
     return (
