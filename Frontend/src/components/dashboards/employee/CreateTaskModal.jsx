@@ -12,6 +12,7 @@ import { taskToForm } from "../../../lib/taskFormState"
 import { CATEGORY_PRESETS } from "../../../lib/taskConstants"
 import { useToast } from "../../../context/ToastContext"
 import useEmployeeDashboardStore from "../../../store/useEmployeeDashboardStore"
+import { useAuth } from "../../../context/AuthContext"
 
 // Employee's self-assigned create-task dialog. Shares its Category/Priority/
 // Hours+Due fields with Manager's version via ../../tasks/TaskFormFields. No assignee
@@ -33,6 +34,8 @@ const BLANK = () => ({
 
 const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting, mode = "create", editTask = null, onSave }) => {
   const loadTasks = useEmployeeDashboardStore(s => s.loadTasks)
+  const { user } = useAuth()
+  const userId = user?.id || user?._id
   const toast = useToast()
   const isEdit = mode === "edit"
 
@@ -89,7 +92,7 @@ const CreateTaskModal = ({ createOpen, setCreateOpen, submitting, setSubmitting,
     setSubmitting(true)
     try {
       await axios.post(`${API_BASE}/api/tasks`, taskForm)
-      await loadTasks()
+      await loadTasks(userId)
       setCreateOpen(false)
       setTaskForm(BLANK())
       setCustomCategoryActive(false)

@@ -1,7 +1,18 @@
+import mongoose from "mongoose"
 import TaskTemplate from "../models/TaskTemplate.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
 import { provisionDailyTasksForAllEmployees } from "../services/dailyTaskService.js"
+
+// Validated up front so bad input is rejected with a clear message here, at the point
+// of entry, rather than surfacing as an opaque Mongoose CastError later during
+// provisioning (dailyTaskService reads these arrays for every employee, every night).
+const validateIdArray = (ids, label) => {
+  if (!Array.isArray(ids)) return null
+  const invalid = ids.filter(id => !mongoose.isValidObjectId(id))
+  if (invalid.length > 0) return `Invalid ${label}: ${invalid.join(", ")}`
+  return null
+}
 
 // GET /api/task-templates — list all (admin only)
 export const getTemplates = asyncHandler(async (req, res) => {
@@ -17,6 +28,11 @@ export const getTemplates = asyncHandler(async (req, res) => {
 export const createTemplate = asyncHandler(async (req, res, next) => {
   const { title, description, category, priority, estimatedHours, scope, departments, employees } = req.body
   if (!title) return next(new AppError("Title is required", 400))
+
+  const deptError = scope === "department" ? validateIdArray(departments, "department IDs") : null
+  if (deptError) return next(new AppError(deptError, 400, "INVALID_DEPARTMENTS"))
+  const empError = scope === "employees" ? validateIdArray(employees, "employee IDs") : null
+  if (empError) return next(new AppError(empError, 400, "INVALID_EMPLOYEES"))
 
   const template = await TaskTemplate.create({
     title,
@@ -58,9 +74,17 @@ export const updateTemplate = asyncHandler(async (req, res, next) => {
     template.scope = scope
   }
   if (departments !== undefined) {
+    if (template.scope === "department") {
+      const deptError = validateIdArray(departments, "department IDs")
+      if (deptError) return next(new AppError(deptError, 400, "INVALID_DEPARTMENTS"))
+    }
     template.departments = (template.scope === "department" && Array.isArray(departments)) ? departments : []
   }
   if (employees !== undefined) {
+    if (template.scope === "employees") {
+      const empError = validateIdArray(employees, "employee IDs")
+      if (empError) return next(new AppError(empError, 400, "INVALID_EMPLOYEES"))
+    }
     template.employees = (template.scope === "employees" && Array.isArray(employees)) ? employees : []
   }
   if (isActive !== undefined) template.isActive = isActive

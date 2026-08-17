@@ -37,14 +37,19 @@ const RateBlock = ({ label, value }) => (
 
 const MyProgress = () => {
   const { user } = useAuth()
+  const userId = user?.id || user?._id
   const { activeSession, elapsedSeconds } = useTimer()
   const report = useEmployeeDashboardStore(s => s.myReport)
   const reportError = useEmployeeDashboardStore(s => s.myReportError)
   const todayHours = useEmployeeDashboardStore(s => s.todayHours)
   const loadMyReport = useEmployeeDashboardStore(s => s.loadMyReport)
 
+  // Route to the right "home" for whichever role is viewing this page — reused
+  // verbatim by manager/super_admin now that everyone can have their own work.
+  const dashboardHome = user?.role === "manager" ? "/manager" : user?.role === "super_admin" ? "/super-admin" : "/employee"
+
   useEffect(() => {
-    loadMyReport()
+    loadMyReport(userId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -57,7 +62,7 @@ const MyProgress = () => {
             <p className="font-semibold text-foreground">Couldn't load your progress</p>
             <p className="text-sm text-muted-foreground">Something went wrong fetching your data. Please try again.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={loadMyReport} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => loadMyReport(userId)} className="gap-1.5">
             <RotateCcw className="h-3.5 w-3.5" /> Retry
           </Button>
         </div>
@@ -80,7 +85,7 @@ const MyProgress = () => {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-1">
-        <Link to="/employee" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-fit">
+        <Link to={dashboardHome} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-fit">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
         </Link>
         <h2 className="text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
@@ -117,20 +122,25 @@ const MyProgress = () => {
                 <Gauge className="h-4 w-4 text-primary" /> Estimation &amp; Velocity
               </h3>
               <div className="grid grid-cols-2 gap-3">
-                <Stat label="Estimation Accuracy" value={`${report.estimationAccuracy ?? 100}%`} sub="Estimated vs tracked" />
+                <Stat label="Estimation Accuracy" value={formatUtilization(report.estimationAccuracy)} sub="Estimated vs tracked" />
                 <Stat label="Avg. Resolution" value={`${report.avgResolutionDays ?? 0}d`} sub="Creation to completion" />
               </div>
             </Card>
 
             <Card className="border-border/40 shadow-lg bg-card/40 backdrop-blur-sm p-4 space-y-3">
               <h3 className="text-sm font-bold flex items-center gap-1.5 text-foreground/90">
-                <Clock3 className="h-4 w-4 text-amber-400" /> Pending Backlog
+                <Clock3 className="h-4 w-4 text-warning" /> Blocked Backlog
               </h3>
-              {report.pending > 0 ? (
+              {/* Paused and blocked are different states and only one of them is worth
+                  ageing — getProgressReport is explicit that a paused task's age mostly
+                  measures overnights and weekends. So the ages here belong to blocked
+                  work (in working days) and paused is reported as a bare count below.
+                  This card previously paired the PAUSED count with the BLOCKED ages. */}
+              {(report.blockedCount ?? 0) > 0 ? (
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Tasks Pending</span>
-                    <span className="font-mono font-bold">{report.pending}</span>
+                    <span className="text-muted-foreground">Tasks Blocked</span>
+                    <span className="font-mono font-bold">{report.blockedCount}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Avg. Age</span>
@@ -138,11 +148,18 @@ const MyProgress = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Oldest</span>
-                    <span className="font-mono font-bold">{report.pendingBacklogOldestAgeDays ?? 0}d</span>
+                    <span className="font-mono font-bold">{report.blockedBacklogOldestAgeDays ?? 0}d</span>
                   </div>
+                  <p className="text-[10px] text-muted-foreground pt-0.5">Working days since each task was flagged.</p>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground italic py-2">No pending backlog.</p>
+                <p className="text-xs text-muted-foreground italic py-2">Nothing is blocked.</p>
+              )}
+              {(report.pausedCount ?? report.pending ?? 0) > 0 && (
+                <p className="text-[11px] text-muted-foreground border-t border-border/30 pt-2">
+                  <strong className="text-foreground">{report.pausedCount ?? report.pending}</strong>
+                  {(report.pausedCount ?? report.pending) === 1 ? " task is" : " tasks are"} paused — timer off, not stuck.
+                </p>
               )}
             </Card>
           </div>
@@ -308,7 +325,7 @@ const MyProgress = () => {
               <Link to="/work-logs"><FileText className="h-3.5 w-3.5" /> Submit work log</Link>
             </Button>
             <Button asChild variant="outline" size="sm" className="w-full justify-start gap-2 rounded-lg">
-              <Link to="/employee"><ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard</Link>
+              <Link to={dashboardHome}><ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard</Link>
             </Button>
           </Card>
         </div>

@@ -5,6 +5,7 @@ import { useTaskActions } from "../../../hooks/useTaskActions"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
 import useCalendarStore from "../../../store/useCalendarStore"
 import AttentionZone from "../manager/AttentionZone"
+import ActiveWorkStrip from "../manager/ActiveWorkStrip"
 import PendingReviewQueue from "../manager/PendingReviewQueue"
 import TeamWorkloadTracker from "../manager/TeamWorkloadTracker"
 import TeamCapacityForecast from "../manager/TeamCapacityForecast"
@@ -135,6 +136,9 @@ const TeamCommandCenter = () => {
       {/* Needs Your Attention — live summary, links down into the sections below */}
       <AttentionZone />
 
+      {/* Who's actively tracking time right now — distinct from a status count */}
+      <ActiveWorkStrip />
+
       {/* Metrics Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-border/50 card-hover relative overflow-hidden group">
@@ -156,7 +160,7 @@ const TeamCommandCenter = () => {
             <UserCheck className={`h-4.5 w-4.5 ${pendingReviewCount > 0 ? "text-warning animate-pulse" : "text-muted-foreground"}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-warning-foreground">{pendingReviewCount}</div>
+            <div className="text-3xl font-bold tracking-tight text-warning">{pendingReviewCount}</div>
             <p className="text-xs text-muted-foreground mt-1">Requires approval review</p>
           </CardContent>
         </Card>

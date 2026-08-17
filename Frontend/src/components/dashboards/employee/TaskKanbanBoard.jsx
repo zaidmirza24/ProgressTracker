@@ -2,6 +2,7 @@ import { useTimer } from "../../../context/TimerContext"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import TaskActionMenu from "../../tasks/TaskActionMenu"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Calendar, Play, Pause, Square, Loader2 } from "lucide-react"
@@ -174,7 +175,9 @@ const TaskKanbanBoard = ({ filteredTasks, setDetailTask, handleStatusTransition,
                       </div>
 
                       <h4 className="text-sm font-bold text-foreground leading-snug tracking-tight">
-                        {t.title}
+                        <OpenDetailButton onOpen={() => setDetailTask(t)} className="font-bold leading-snug tracking-tight">
+                          {t.title}
+                        </OpenDetailButton>
                       </h4>
 
                       {/* Action Badges */}

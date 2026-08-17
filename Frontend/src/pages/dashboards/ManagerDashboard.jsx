@@ -1,6 +1,8 @@
 import { useAuth } from "../../context/AuthContext"
 import TeamCommandCenter from "../../components/dashboards/shared/TeamCommandCenter"
 
+// Team-management surface only — the Manager's own work now lives on its own
+// sidebar page ("My Work", see MyWorkPage.jsx) rather than a tab here.
 const ManagerDashboard = () => {
   const { user } = useAuth()
 

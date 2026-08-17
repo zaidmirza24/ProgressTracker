@@ -54,8 +54,14 @@ const useOrgStore = create((set, get) => ({
   },
 
   updateTeam: async (id, form) => {
-    await axios.put(`${API_BASE}/api/teams/${id}`, form)
+    const res = await axios.put(`${API_BASE}/api/teams/${id}`, form)
     await get().fetchTeams()
+    // A department change cascades to the team's members server-side (their `department`
+    // field is kept in sync) — refetch users too, or the Users tab shows stale department
+    // badges until an unrelated action happens to reload it.
+    if (res.data.membersUpdated) {
+      await get().fetchUsers()
+    }
   },
 
   fetchUsers: async () => {

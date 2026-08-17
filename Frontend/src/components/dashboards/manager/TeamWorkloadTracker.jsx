@@ -1,9 +1,12 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { User, Plus, CheckCircle2, Calendar, AlertTriangle, CalendarOff } from "lucide-react"
 import PersonAvatar from "@/components/ui/person-avatar"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { STATUS_VARIANTS, PRIORITY_VARIANTS, formatStatus } from "../../../lib/taskConstants"
 import { getEmployeeCapacity, CAPACITY_REASON_LABELS } from "../../../lib/taskHelpers"
 import { formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
@@ -19,10 +22,42 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
   const employees = useManagerDashboardStore(s => s.employees)
   const calendar = useCalendarStore(s => s.calendar)
   const [absenceTarget, setAbsenceTarget] = useState(null)
+  const [departmentFilter, setDepartmentFilter] = useState("all")
+  const [teamFilter, setTeamFilter] = useState("all")
+
+  const allEmployees = useMemo(() => employees.filter(emp => emp.role === "employee"), [employees])
+
+  // Options are derived from who's actually visible here, not the full org list — this
+  // is what makes the same filter correctly self-scope for both roles: a manager (whose
+  // reports usually span one department/team already) sees a filter with nothing to
+  // narrow, while a Super Admin (org-wide) sees every department/team that currently has
+  // someone in it. Narrowing this view never changes who's actually loaded — Super Admin
+  // still has full org-wide data, this is purely display filtering.
+  const departmentOptions = useMemo(() => {
+    const map = new Map()
+    allEmployees.forEach(emp => { if (emp.department) map.set(emp.department._id, emp.department.name) })
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [allEmployees])
+
+  const teamOptions = useMemo(() => {
+    const map = new Map()
+    allEmployees
+      .filter(emp => departmentFilter === "all" || emp.department?._id === departmentFilter)
+      .forEach(emp => { if (emp.team) map.set(emp.team._id, emp.team.name) })
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [allEmployees, departmentFilter])
+
+  const visibleEmployees = allEmployees
+    .filter(emp => departmentFilter === "all" || emp.department?._id === departmentFilter)
+    .filter(emp => teamFilter === "all" || emp.team?._id === teamFilter)
+
+  // Only worth showing when there's actually something to narrow — keeps a manager's
+  // already-small, already-scoped view uncluttered.
+  const showFilters = departmentOptions.length > 1
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
@@ -30,10 +65,47 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
           </h3>
           <p className="text-sm text-muted-foreground">Monitor pending tasks and allocate new work employee-wise</p>
         </div>
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 bg-muted/20 px-3 py-2 rounded-xl border border-border/40">
+            <Label className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground pl-1">Filter:</Label>
+            <Select
+              value={departmentFilter}
+              onValueChange={value => { setDepartmentFilter(value); setTeamFilter("all") }}
+            >
+              <SelectTrigger className="h-8 w-auto rounded-lg border-input bg-transparent px-2.5 py-1 text-xs shadow-sm">
+                <SelectValue placeholder="All Departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Departments</SelectItem>
+                {departmentOptions.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={teamFilter} onValueChange={setTeamFilter} disabled={teamOptions.length === 0}>
+              <SelectTrigger className="h-8 w-auto rounded-lg border-input bg-transparent px-2.5 py-1 text-xs shadow-sm">
+                <SelectValue placeholder="All Teams" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Teams</SelectItem>
+                {teamOptions.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
+      {showFilters && visibleEmployees.length === 0 && (
+        <div className="text-center py-10 border border-dashed border-border/30 rounded-xl bg-muted/5">
+          <p className="text-sm font-semibold text-foreground">No one matches this filter</p>
+          <p className="text-xs text-muted-foreground mt-1">Try a different department or team.</p>
+        </div>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {employees.filter(emp => emp.role === "employee").map(emp => {
+        {visibleEmployees.map(emp => {
           // Get open (non-completed) tasks for this employee
           const openTasks = tasks.filter(t => t.assignedTo?._id === emp._id && t.status !== "Completed")
           const inProgress = openTasks.filter(t => t.status === "In Progress").length
@@ -144,7 +216,7 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
                     <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Paused</div>
                   </div>
                   <div>
-                    <div className="font-bold text-warning-foreground">{inReview}</div>
+                    <div className="font-bold text-warning">{inReview}</div>
                     <div className="text-[8px] text-muted-foreground uppercase font-semibold mt-0.5">Review</div>
                   </div>
                 </div>
@@ -164,9 +236,12 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
                         className="p-2.5 rounded-xl border border-border/40 hover:border-primary/20 bg-background/20 hover:bg-background/40 transition-colors cursor-pointer space-y-1 relative"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <span className="text-[11px] font-bold text-foreground/90 line-clamp-2 leading-tight">
+                          <OpenDetailButton
+                            onOpen={() => setDetailTask(t)}
+                            className="text-[11px] font-bold text-foreground/90 line-clamp-2 leading-tight"
+                          >
                             {t.title}
-                          </span>
+                          </OpenDetailButton>
                           <div className="flex items-center gap-1 shrink-0">
                             {/* Estimate drives the capacity bar above — showing it here
                                 makes the cause of an overload legible at a glance. */}

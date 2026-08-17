@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import TaskActionMenu from "../../tasks/TaskActionMenu"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import PersonAvatar from "@/components/ui/person-avatar"
 import { Clock, Calendar, Play, Pause, Square, AlertCircle, Loader2 } from "lucide-react"
@@ -88,7 +89,9 @@ const TaskListView = ({ filteredTasks, loading, searchQuery, setDetailTask, hand
                     <TableCell className="font-medium">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-sm font-bold text-foreground/90 group-hover:text-primary transition-colors flex items-center gap-1.5 flex-wrap">
-                        {t.title}
+                        <OpenDetailButton onOpen={() => setDetailTask(t)} className="font-bold">
+                          {t.title}
+                        </OpenDetailButton>
                         {selfCreated && !t.isDaily && (
                           <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
                         )}

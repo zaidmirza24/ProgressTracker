@@ -18,7 +18,7 @@ const AttentionItem = ({ icon: Icon, count, label, targetId, to, tone = "warning
   const navigate = useNavigate()
   if (count === 0) return null
   const toneClasses = {
-    warning: "border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning-foreground",
+    warning: "border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning",
     destructive: "border-destructive/30 bg-destructive/5 hover:bg-destructive/10 text-destructive"
   }
   return (

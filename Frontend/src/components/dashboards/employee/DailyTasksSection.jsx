@@ -1,5 +1,6 @@
 import { useTimer } from "../../../context/TimerContext"
 import { Badge } from "@/components/ui/badge"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { Play, Pause, Check, Repeat, ArrowRightCircle } from "lucide-react"
 import { PRIORITY_VARIANTS } from "../../../lib/taskConstants"
 import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked } from "../../../lib/taskFormatters"
@@ -66,7 +67,14 @@ const DailyTasksSection = ({ setDetailTask }) => {
               <div className="pl-2 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <span className={`text-sm font-bold leading-snug ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                    {t.title}
+                    {/* line-through has to be repeated on the button — text-decoration
+                        doesn't propagate from an inline parent into a button child. */}
+                    <OpenDetailButton
+                      onOpen={() => setDetailTask(t)}
+                      className={`font-bold leading-snug ${isDone ? "line-through" : ""}`}
+                    >
+                      {t.title}
+                    </OpenDetailButton>
                   </span>
                   {isDone
                     ? <Check className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />

@@ -8,7 +8,7 @@ const router = express.Router()
 router.use(authenticateJWT)
 
 router.get("/", getTasks)
-router.get("/daily", requireRole(["employee"]), ensureDailyTasks)
+router.get("/daily", requireRole(["employee", "manager", "super_admin"]), ensureDailyTasks)
 router.get("/report", requireRole(["super_admin", "manager", "employee"]), getProgressReport)
 router.post("/", requireRole(["manager", "super_admin", "employee"]), createTask)
 // Field edits (incl. reassignment). Role nuance is handled inside the controller —

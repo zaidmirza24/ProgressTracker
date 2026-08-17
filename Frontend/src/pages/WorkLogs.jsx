@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import PersonAvatar from "@/components/ui/person-avatar"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { Plus, FileText, Clock, ClipboardList, Loader2, Calendar, AlertCircle } from "lucide-react"
 
 const BLANK_FORM = {
@@ -291,7 +292,12 @@ const WorkLogs = () => {
                         </span>
                       </TableCell>
                       <TableCell className="max-w-[300px]">
-                        <p className="truncate text-sm text-foreground/80">{log.todaysWork}</p>
+                        <OpenDetailButton
+                          onOpen={() => setDetailLog(log)}
+                          className="block w-full truncate text-sm text-foreground/80"
+                        >
+                          {log.todaysWork}
+                        </OpenDetailButton>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="font-mono text-xs font-bold rounded-md bg-muted/40 whitespace-nowrap">

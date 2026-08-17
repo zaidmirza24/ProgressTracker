@@ -42,7 +42,7 @@ const NeedsAttentionStrip = () => {
         <button
           type="button"
           onClick={scrollToTasks}
-          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning-foreground transition-colors text-left"
+          className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning transition-colors text-left"
         >
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="text-sm font-bold">{overrunCount}</span>

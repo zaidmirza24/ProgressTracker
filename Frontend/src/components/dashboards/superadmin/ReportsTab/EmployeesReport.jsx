@@ -1,5 +1,6 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import { TrendingDown } from "lucide-react"
 import { formatHours } from "../../../../lib/taskFormatters"
 import useReportsStore from "../../../../store/useReportsStore"
@@ -28,7 +29,14 @@ const EmployeesReport = () => {
               <TableCell className="font-medium">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-bold text-foreground/90 flex items-center gap-1.5">
-                    {e.name}
+                    <OpenDetailButton onOpen={() => setSelectedEmployee(e)} className="font-bold">
+                      {e.name}
+                    </OpenDetailButton>
+                    {e.role && e.role !== "employee" && (
+                      <Badge variant="outline" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase border-info/40 text-info" title="This row is a manager/admin's own work, not a direct report">
+                        {e.role === "super_admin" ? "Admin" : "Manager"}
+                      </Badge>
+                    )}
                     {e.hasQualitySignal && (
                       <Badge variant="outline" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase border-amber-500/40 text-amber-400" title="More than half of reviewed work needed rework — see drill-down">
                         Rework

@@ -56,9 +56,14 @@ export const provisionDailyTasksForEmployee = async (employeeId, context = null)
 
   for (const t of incompletePastDailyTasks) {
     if (t.templateRef) {
+      // isActive: true matters here — otherwise a soft-cancelled instance for today
+      // (see cancelTask) still counts as "already exists," so neither this loop nor
+      // the fresh-instantiation loop below creates a replacement, leaving the employee
+      // with no task at all for this template today.
       const alreadyCarried = await Task.findOne({
         assignedTo: employeeId,
         templateRef: t.templateRef,
+        isActive: true,
         dailyDate: { $gte: startOfToday, $lt: endOfToday }
       })
       if (!alreadyCarried) {
@@ -70,9 +75,11 @@ export const provisionDailyTasksForEmployee = async (employeeId, context = null)
   }
 
   for (const tpl of templates) {
+    // Same isActive: true reasoning as the carry-forward check above.
     const exists = await Task.findOne({
       assignedTo: employeeId,
       templateRef: tpl._id,
+      isActive: true,
       dailyDate: { $gte: startOfToday, $lt: endOfToday }
     })
     if (!exists) {
@@ -96,10 +103,12 @@ export const provisionDailyTasksForEmployee = async (employeeId, context = null)
   }
 }
 
-// Runs provisioning for every active employee — used by the midnight cron so today's
-// daily tasks (and capacity numbers derived from them) exist before anyone logs in.
-// Settings and absences are fetched once and shared across the loop rather than
-// re-queried per employee.
+// Runs provisioning for every active worker — employees, managers, and super_admins
+// alike, since "having daily tasks" is a worker responsibility, not an employee-only
+// one (managers/admins can have their own daily tasks too). Used by the midnight cron
+// so today's daily tasks (and capacity numbers derived from them) exist before anyone
+// logs in. Settings and absences are fetched once and shared across the loop rather
+// than re-queried per employee.
 export const provisionDailyTasksForAllEmployees = async () => {
   const settings = await getOrgSettings()
   const today = new Date()
@@ -110,7 +119,7 @@ export const provisionDailyTasksForAllEmployees = async () => {
     return
   }
 
-  const employees = await User.find({ role: "employee", isActive: true }).select("_id")
+  const employees = await User.find({ role: { $in: ["employee", "manager", "super_admin"] }, isActive: true }).select("_id")
   const absences = await getAbsencesInRange(startOfToday, startOfToday, employees.map(e => e._id))
   const context = { settings, absences }
 

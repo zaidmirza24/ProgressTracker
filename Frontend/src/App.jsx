@@ -12,6 +12,7 @@ import AdminReportsPage from "./pages/dashboards/AdminReportsPage"
 import TeamTasksPage from "./pages/dashboards/TeamTasksPage"
 import OrganizationPage from "./pages/dashboards/OrganizationPage"
 import ManagerDashboard from "./pages/dashboards/ManagerDashboard"
+import MyWorkPage from "./pages/dashboards/MyWorkPage"
 import EmployeeDashboard from "./pages/dashboards/EmployeeDashboard"
 import Unauthorized from "./pages/dashboards/Unauthorized"
 import WorkLogs from "./pages/WorkLogs"
@@ -80,6 +81,15 @@ function App() {
             />
             
             <Route
+              path="/my-work"
+              element={
+                <ProtectedRoute allowedRoles={["manager", "super_admin"]}>
+                  <MyWorkPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/team-tasks"
               element={
                 <ProtectedRoute allowedRoles={["manager", "super_admin"]}>
@@ -100,7 +110,7 @@ function App() {
             <Route
               path="/my-progress"
               element={
-                <ProtectedRoute allowedRoles={["employee"]}>
+                <ProtectedRoute allowedRoles={["employee", "manager", "super_admin"]}>
                   <MyProgress />
                 </ProtectedRoute>
               }

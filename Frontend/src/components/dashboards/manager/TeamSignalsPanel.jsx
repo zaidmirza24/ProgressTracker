@@ -111,7 +111,7 @@ const TeamSignalsPanel = () => {
 
                   <SignalBlock icon={Clock} label="Time">
                     <Row label="Tracked" value={formatHours(r.totalTrackedSeconds)} />
-                    <Row label="Estimation Accuracy" value={`${r.estimationAccuracy}%`} />
+                    <Row label="Estimation Accuracy" value={formatUtilization(r.estimationAccuracy)} />
                   </SignalBlock>
 
                   <SignalBlock icon={Gauge} label="Capacity Today" flagged={r.isCapacityOverrunToday}>

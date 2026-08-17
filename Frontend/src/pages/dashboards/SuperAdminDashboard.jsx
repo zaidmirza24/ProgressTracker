@@ -4,7 +4,8 @@ import { Shield } from "lucide-react"
 import OrgPulseStrip from "../../components/dashboards/superadmin/OrgPulseStrip"
 import TeamCommandCenter from "../../components/dashboards/shared/TeamCommandCenter"
 
-// ─── Super Admin Dashboard ───────────────────────────────────────────────────
+// Organization-wide surface only — the Super Admin's own work now lives on its own
+// sidebar page ("My Work", see MyWorkPage.jsx) rather than a tab here.
 const SuperAdminDashboard = () => {
   const { user } = useAuth()
   const navigate = useNavigate()

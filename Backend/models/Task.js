@@ -17,7 +17,7 @@ const TaskSchema = new mongoose.Schema(
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     priority: { type: String, enum: ["low", "medium", "high"], default: "medium" },
-    estimatedHours: { type: Number, default: 0 },
+    estimatedHours: { type: Number, default: 0, min: 0, max: 100 },
     dueDate: { type: Date, default: null },
     status: {
       type: String,

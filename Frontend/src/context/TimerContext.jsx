@@ -15,7 +15,7 @@ export const TimerProvider = ({ children }) => {
   const timerRef = useRef(null)
 
   const fetchActiveSession = useCallback(async () => {
-    if (!user || user.role !== "employee") {
+    if (!user) {
       setActiveSession(null)
       setElapsedSeconds(0)
       setIsRunning(false)

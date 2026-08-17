@@ -12,6 +12,7 @@ import { STATUS_VARIANTS, PRIORITY_VARIANTS, formatStatus } from "../../../lib/t
 import { formatTrackedTime, formatOverrun, formatCarryForwardDate, formatBlocked, formatRework } from "../../../lib/taskFormatters"
 import { isSelfCreated, isTaskOverdue, getNextStatusesForManager } from "../../../lib/taskHelpers"
 import TaskActionMenu from "../../tasks/TaskActionMenu"
+import OpenDetailButton from "@/components/ui/open-detail-button"
 import ScopeToggle from "../../tasks/ScopeToggle"
 import { filterTasksByScope, SCOPE_LABELS, TASK_SCOPES } from "../../../lib/taskScope"
 import useManagerDashboardStore from "../../../store/useManagerDashboardStore"
@@ -165,7 +166,9 @@ const TeamTasksTable = ({ updateTaskStatus, setDetailTask, loading, taskActions,
                       <TableCell className="font-medium">
                         <div className="flex flex-col gap-0.5">
                           <span className="text-sm font-bold text-foreground/90 flex items-center gap-1.5">
-                            {t.title}
+                            <OpenDetailButton onOpen={() => setDetailTask(t)} className="font-bold">
+                              {t.title}
+                            </OpenDetailButton>
                             {selfCreated && (
                               <Badge variant="violet" className="text-[9px] py-0 px-1 font-bold rounded-sm uppercase">Self</Badge>
                             )}

@@ -76,3 +76,32 @@ export const stopActiveSessionForEmployee = async (employeeId) => {
 
   return closeOutSession(session)
 }
+
+/**
+ * Stops whatever session an employee has running, then starts a new one for `taskId`.
+ * Single source of truth for "start a timer" so both the dedicated timer endpoint
+ * (workSessionController.startSession) and the status-transition path
+ * (taskController.updateTaskStatus, moving a task to "In Progress") stay in sync.
+ *
+ * The stop-then-create sequence is two separate writes, so two concurrent calls for the
+ * same employee can both pass the "stop the old one" step before either commits their new
+ * session. WorkSession's partial unique index on { employee, stoppedAt: null } (Locked
+ * Logic §2 — exactly one active timer) makes the database itself reject the second
+ * `create`; the loser retries, which by then finds the winner's session and stops it
+ * instead, converging to a single active session rather than surfacing a 500 to the user.
+ *
+ * @param {string} taskId
+ * @param {string} employeeId
+ * @returns {Promise<object>} The newly created, active WorkSession
+ */
+export const startSessionForTask = async (taskId, employeeId, attempt = 0) => {
+  await stopActiveSessionForEmployee(employeeId)
+  try {
+    return await WorkSession.create({ task: taskId, employee: employeeId, startedAt: new Date() })
+  } catch (err) {
+    if (err.code === 11000 && attempt < 3) {
+      return startSessionForTask(taskId, employeeId, attempt + 1)
+    }
+    throw err
+  }
+}

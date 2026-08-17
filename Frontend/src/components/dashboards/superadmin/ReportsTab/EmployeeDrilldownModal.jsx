@@ -45,7 +45,7 @@ const EmployeeDrilldownModal = () => {
               <div className="bg-muted/30 border border-border/50 rounded-xl p-3 text-center">
                 <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide">Estimation Accuracy</div>
                 <div className="text-xl font-black text-violet-400 mt-1">
-                  {selectedEmployee.estimationAccuracy ?? 100}%
+                  {formatUtilization(selectedEmployee.estimationAccuracy)}
                 </div>
                 <div className="text-[9px] text-muted-foreground font-semibold mt-0.5">Estimated vs Tracked Hours</div>
               </div>
@@ -103,16 +103,19 @@ const EmployeeDrilldownModal = () => {
                 </div>
               </div>
 
-              {/* Pending Backlog Age */}
+              {/* Blocked Backlog Age. Paused and blocked are different states and only
+                  blocked is worth ageing (getProgressReport: a paused task's age mostly
+                  measures overnights and weekends). This previously paired the PAUSED
+                  count with the BLOCKED ages under a "Pending Backlog" heading. */}
               <div className="space-y-2">
                 <h4 className="text-sm font-bold flex items-center gap-1.5 border-b border-border/40 pb-2 text-foreground/90">
-                  <Clock3 className="h-4 w-4 text-amber-400" /> Pending Backlog
+                  <Clock3 className="h-4 w-4 text-warning" /> Blocked Backlog
                 </h4>
-                {selectedEmployee.pending > 0 ? (
+                {(selectedEmployee.blockedCount ?? 0) > 0 ? (
                   <div className="space-y-2 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Tasks Pending</span>
-                      <span className="font-mono font-bold">{selectedEmployee.pending}</span>
+                      <span className="text-muted-foreground">Tasks Blocked</span>
+                      <span className="font-mono font-bold">{selectedEmployee.blockedCount}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Avg. Age</span>
@@ -120,11 +123,18 @@ const EmployeeDrilldownModal = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Oldest</span>
-                      <span className="font-mono font-bold">{selectedEmployee.pendingBacklogOldestAgeDays ?? 0}d</span>
+                      <span className="font-mono font-bold">{selectedEmployee.blockedBacklogOldestAgeDays ?? 0}d</span>
                     </div>
+                    <p className="text-[10px] text-muted-foreground">Working days since each task was flagged.</p>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground italic">No pending backlog.</p>
+                  <p className="text-xs text-muted-foreground italic">Nothing is blocked.</p>
+                )}
+                {(selectedEmployee.pausedCount ?? selectedEmployee.pending ?? 0) > 0 && (
+                  <p className="text-[11px] text-muted-foreground border-t border-border/30 pt-2">
+                    <strong className="text-foreground">{selectedEmployee.pausedCount ?? selectedEmployee.pending}</strong>
+                    {(selectedEmployee.pausedCount ?? selectedEmployee.pending) === 1 ? " task is" : " tasks are"} paused — timer off, not stuck.
+                  </p>
                 )}
               </div>
             </div>

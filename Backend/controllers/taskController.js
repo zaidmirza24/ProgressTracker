@@ -3,14 +3,14 @@ import Task from "../models/Task.js"
 import User from "../models/User.js"
 import Department from "../models/Department.js"
 import WorkSession from "../models/WorkSession.js"
-import { isValidTransition } from "../config/workflow.js"
+import { isValidTransition, TASK_STATUSES } from "../config/workflow.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
 import { provisionDailyTasksForEmployee } from "../services/dailyTaskService.js"
 import {
   calculateSessionElapsedSeconds,
   stopRunningSessionForTask,
-  stopActiveSessionForEmployee
+  startSessionForTask
 } from "../services/taskService.js"
 import {
   getOrgSettings,
@@ -153,6 +153,52 @@ const getProgressForStatus = (status) => {
   }
 }
 
+// Locked Logic §6 — "A new assignment that would push planned work past capacity must
+// flag the employee as over capacity so the manager can redistribute/reschedule."
+// This is advisory only: it never blocks the write, only returns a message the caller
+// surfaces as a warning and the task's history records for later visibility. V1 is
+// single-day capacity planning only, so there's nothing to check without a target day
+// (a task with no due date, or a non-daily task's dueDate left unset).
+//
+// The planned-hours formula mirrors Frontend/src/lib/taskHelpers.js's
+// getPlannedHoursForDay exactly — same fields, same "not Completed", same
+// same-calendar-day match — so a manager never sees the UI and the API disagree.
+const checkCapacityWarning = async (assigneeId, targetDate, newEstimatedHours, excludeTaskId = null) => {
+  if (!assigneeId || !targetDate) return null
+
+  const assignee = await User.findById(assigneeId).select("name dailyWorkingHours breakHours")
+  if (!assignee) return null
+
+  const [orgSettings, absences] = await Promise.all([
+    getOrgSettings(),
+    getAbsencesInRange(targetDate, targetDate, [assigneeId])
+  ])
+  const capacity = getCapacityForDay(assignee, targetDate, orgSettings, absences)
+
+  if (capacity.hours <= 0) {
+    return `${assignee.name} has no available capacity on this day (${capacity.reason || "unavailable"}) — consider a different due date.`
+  }
+
+  const otherTasks = await Task.find({
+    isActive: true,
+    assignedTo: assigneeId,
+    status: { $ne: "Completed" },
+    ...(excludeTaskId && { _id: { $ne: excludeTaskId } })
+  }).select("isDaily dailyDate dueDate estimatedHours").lean()
+
+  const existingPlannedHours = otherTasks.reduce((sum, t) => {
+    const relevantDate = t.isDaily ? t.dailyDate : t.dueDate
+    if (!relevantDate || !isSameCalendarDay(new Date(relevantDate), targetDate)) return sum
+    return sum + (t.estimatedHours || 0)
+  }, 0)
+
+  const totalPlannedHours = existingPlannedHours + (newEstimatedHours || 0)
+  if (totalPlannedHours > capacity.hours) {
+    return `This puts ${assignee.name} at ${totalPlannedHours}h planned against a ${capacity.hours}h capacity that day — consider redistributing or rescheduling.`
+  }
+  return null
+}
+
 // ─── GET /api/tasks ───────────────────────────────────────────────────────────
 // Query params (all optional, all additive — omitting them preserves the original
 // all-time behaviour so existing callers are unaffected):
@@ -187,7 +233,15 @@ export const getTasks = asyncHandler(async (req, res, next) => {
   const scopeFilter = buildScopeFilter(scope)
   if (scopeFilter) conditions.push(scopeFilter)
 
-  if (status) conditions.push({ status })
+  // Reject anything that isn't a plain string matching a real status — Express's query
+  // parser turns bracket syntax like `?status[$ne]=Completed` into an object, which would
+  // otherwise reach the Mongo query as a live operator instead of a status to match.
+  if (status) {
+    if (typeof status !== "string" || !TASK_STATUSES.includes(status)) {
+      return next(new AppError(`status must be one of: ${TASK_STATUSES.join(", ")}`, 400, "INVALID_STATUS"))
+    }
+    conditions.push({ status })
+  }
   // An explicit assignee narrows within the caller's scope — it never widens it, since
   // the role condition above is ANDed alongside.
   if (assignedTo) {
@@ -234,11 +288,43 @@ export const getTasks = asyncHandler(async (req, res, next) => {
 export const createTask = asyncHandler(async (req, res, next) => {
   const { title, description, category, department, assignedTo, priority, estimatedHours, dueDate } = req.body
 
-  const targetAssignedTo = req.user.role === "employee" ? req.user.id : assignedTo
+  // An employee is always forced to self — never trust the client to assign work to
+  // someone else (see CLAUDE.md Authorization rule). A manager/super_admin keeps their
+  // existing ability to assign to anyone they can see, but defaults to themselves when
+  // no assignee is given — this is what lets the same self-assign "Create Task" modal
+  // (no assignee field) be reused for a manager/admin's own "My Work" tab.
+  const targetAssignedTo = req.user.role === "employee" ? req.user.id : (assignedTo || req.user.id)
 
   if (!title || !targetAssignedTo) {
     return next(new AppError("Title and assignedTo fields are required", 400))
   }
+
+  // Same bound as updateTask's estimatedHours validation — this is the other place
+  // the field enters the system, and it feeds every downstream capacity/overrun
+  // calculation, so an unvalidated value here would silently corrupt those numbers.
+  const parsedEstimatedHours = estimatedHours === undefined || estimatedHours === null || estimatedHours === ""
+    ? 0
+    : Number(estimatedHours)
+  if (!Number.isFinite(parsedEstimatedHours) || parsedEstimatedHours < 0 || parsedEstimatedHours > 100) {
+    return next(new AppError("Estimated hours must be a number between 0 and 100", 400, "INVALID_ESTIMATE"))
+  }
+
+  if (priority !== undefined && !["low", "medium", "high"].includes(priority)) {
+    return next(new AppError("Priority must be low, medium, or high", 400, "INVALID_PRIORITY"))
+  }
+
+  let parsedDueDate = null
+  if (dueDate) {
+    parsedDueDate = new Date(dueDate)
+    if (Number.isNaN(parsedDueDate.getTime())) {
+      return next(new AppError("Due date is not a valid date", 400, "INVALID_DUE_DATE"))
+    }
+  }
+
+  // Locked Logic §6 — flag, never block, an assignment that pushes the assignee over
+  // capacity for that day. Recorded in history (not just the response) so it stays
+  // visible to anyone reviewing the task later, not only to whoever created it.
+  const capacityWarning = await checkCapacityWarning(targetAssignedTo, parsedDueDate, parsedEstimatedHours)
 
   const task = await Task.create({
     title,
@@ -248,10 +334,13 @@ export const createTask = asyncHandler(async (req, res, next) => {
     assignedBy: req.user.id,
     assignedTo: targetAssignedTo,
     priority: priority || "medium",
-    estimatedHours: estimatedHours || 0,
-    dueDate: dueDate || null,
+    estimatedHours: parsedEstimatedHours,
+    dueDate: parsedDueDate,
     status: "Not Started",
-    progressPercentage: 0
+    progressPercentage: 0,
+    ...(capacityWarning && {
+      history: [{ changedBy: req.user.id, comment: `Assigned over capacity: ${capacityWarning}` }]
+    })
   })
 
   const populatedTask = await Task.findById(task._id)
@@ -259,12 +348,15 @@ export const createTask = asyncHandler(async (req, res, next) => {
     .populate("assignedBy", "name email")
     .populate("department", "name")
 
-  res.status(201).json({ task: { ...populatedTask.toObject(), totalTrackedSeconds: 0, ...computeOverrunFields(populatedTask.estimatedHours, 0) } })
+  res.status(201).json({
+    task: { ...populatedTask.toObject(), totalTrackedSeconds: 0, ...computeOverrunFields(populatedTask.estimatedHours, 0) },
+    ...(capacityWarning && { warning: capacityWarning })
+  })
 })
 
 // ─── PUT /api/tasks/:id/status ────────────────────────────────────────────────
 export const updateTaskStatus = asyncHandler(async (req, res, next) => {
-  const { status, comment } = req.body
+  const { status, comment, updatedAt } = req.body
   const { id } = req.params
 
   const task = await Task.findById(id)
@@ -274,6 +366,15 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
 
   if (!(await hasTaskAccess(req, task))) {
     return next(new AppError("You do not have permission to update this task", 403))
+  }
+
+  // Optimistic concurrency (§29) — same check updateTask already applies to field
+  // edits. Without it, two concurrent status changes on the same task (e.g. an
+  // employee submitting for review while a manager reopens it) silently race:
+  // both saves succeed, the timer start/stop side effects for both fire, and
+  // whichever save lands last wins with no indication the other was ever lost.
+  if (updatedAt && new Date(updatedAt).getTime() !== new Date(task.updatedAt).getTime()) {
+    return next(new AppError("This task was changed by someone else. Reload to see the latest version.", 409, "TASK_MODIFIED"))
   }
 
   const isSelfAssigned = task.assignedBy.toString() === task.assignedTo.toString()
@@ -303,14 +404,9 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   // the previous inline versions measured from `startedAt` unconditionally and so
   // counted paused time as worked time.
   if (finalStatus === "In Progress" && oldStatus !== "In Progress") {
-    // 1. Stop any currently active timer for this employee first to prevent collision
-    await stopActiveSessionForEmployee(req.user.id)
-    // 2. Start a new session for this task
-    await WorkSession.create({
-      task: task._id,
-      employee: req.user.id,
-      startedAt: new Date()
-    })
+    // Stops any currently active timer for this employee, then starts a new one for
+    // this task — race-safe against concurrent start requests (see startSessionForTask).
+    await startSessionForTask(task._id, req.user.id)
   } else if (oldStatus === "In Progress" && finalStatus !== "In Progress") {
     // Moving OUT of In Progress stops this task's session, retaining its time (Locked §2)
     await stopRunningSessionForTask(task._id, req.user.id)
@@ -523,6 +619,20 @@ export const updateTask = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Locked Logic §6 — re-check capacity whenever a field that affects it actually
+  // changed (estimate, due date, or reassignment). `task.*` already holds the new
+  // values from the loop above, so this reflects exactly what's about to be saved.
+  // Flag-only, same as createTask — never blocks the write.
+  const capacityRelevantChange = changes.some(c => ["estimatedHours", "dueDate", "assignedTo"].includes(c.field))
+  if (capacityRelevantChange) {
+    const targetDate = task.isDaily ? task.dailyDate : task.dueDate
+    const capacityWarning = await checkCapacityWarning(task.assignedTo, targetDate, task.estimatedHours, task._id)
+    if (capacityWarning) {
+      warning = warning ? `${warning} ${capacityWarning}` : capacityWarning
+      task.history.push({ changedBy: req.user.id, comment: `Now over capacity: ${capacityWarning}` })
+    }
+  }
+
   task.history.push({
     changes,
     changedBy: req.user.id,
@@ -719,8 +829,34 @@ export const ensureDailyTasks = asyncHandler(async (req, res) => {
 export const getProgressReport = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query
 
-  // ── 1. Build Task Query with Date Filters ──────────────────────────────────
+  // ── 1. Fetch active reportable users — a manager sees their direct reports
+  //      PLUS their own row (a manager is also a worker); an employee sees only
+  //      themselves; super_admin sees the whole org, including managers and
+  //      themselves (Locked Logic §12, extended: role is a responsibility layered
+  //      on top of "has work," not the sole definition of who can be reported on).
+  //      Computed first so every task/overdue query below can be scoped to the
+  //      same employee set — every report section must agree on "whose org this
+  //      is," not just employeeReport.
+  const userFilter = { isActive: true }
+  if (req.user.role === "manager") {
+    userFilter.$or = [{ role: "employee", manager: req.user.id }, { _id: req.user.id }]
+  } else if (req.user.role === "employee") {
+    userFilter._id = req.user.id
+  } else {
+    // super_admin: every active employee and manager, plus the admin's own row
+    userFilter.role = { $in: ["employee", "manager", "super_admin"] }
+  }
+  const users = await User.find(userFilter)
+    .populate("department", "name")
+    .populate("team", "name")
+    .lean()
+  const visibleUserIds = users.map(u => u._id)
+
+  // ── 2. Build Task Query with Date Filters ──────────────────────────────────
   const query = { isActive: true }
+  if (req.user.role !== "super_admin") {
+    query.assignedTo = { $in: visibleUserIds }
+  }
   if (startDate && endDate) {
     const start = new Date(startDate)
     const end = new Date(endDate)
@@ -746,7 +882,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
 
   const taskIds = tasks.map(t => t._id)
 
-  // ── 2. Batch-aggregate tracked seconds for all tasks ──────────────────────
+  // ── 3. Batch-aggregate tracked seconds for all tasks ──────────────────────
   const matchSession = { task: { $in: taskIds }, stoppedAt: { $ne: null } }
   const activeSessionFilter = { task: { $in: taskIds }, stoppedAt: null }
 
@@ -777,14 +913,19 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     trackedMap[sid] = (stoppedMap[sid] || 0) + (activeMap[sid] || 0)
   })
 
-  // ── 2b. Overdue is an absolute, always-current signal — computed from the full
+  // ── 3b. Overdue is an absolute, always-current signal — computed from the full
   //      active task set regardless of the report's date filter, so switching the
-  //      timeframe dropdown never changes what counts as overdue.
-  const overdueTasks = await Task.find({
+  //      timeframe dropdown never changes what counts as overdue. Still scoped to
+  //      the same visible-employee set as everything else in this report.
+  const overdueQuery = {
     isActive: true,
     dueDate: { $lt: new Date() },
     status: { $ne: "Completed" }
-  })
+  }
+  if (req.user.role !== "super_admin") {
+    overdueQuery.assignedTo = { $in: visibleUserIds }
+  }
+  const overdueTasks = await Task.find(overdueQuery)
     .select("assignedTo department priority")
     .populate({ path: "assignedTo", select: "team" })
     .lean()
@@ -805,20 +946,6 @@ export const getProgressReport = asyncHandler(async (req, res) => {
 
     if (t.priority) overdueByPriority[t.priority] = (overdueByPriority[t.priority] || 0) + 1
   })
-
-  // ── 3. Fetch active employees — a manager sees only their direct reports;
-  //      an employee sees only themselves; super_admin sees the whole org
-  //      (Locked Logic §12) ─────────────────────────────────────────────────
-  const userFilter = { isActive: true, role: "employee" }
-  if (req.user.role === "manager") {
-    userFilter.manager = req.user.id
-  } else if (req.user.role === "employee") {
-    userFilter._id = req.user.id
-  }
-  const users = await User.find(userFilter)
-    .populate("department", "name")
-    .populate("team", "name")
-    .lean()
 
   // Calendar context, fetched once for the whole report rather than per employee.
   const orgSettings = await getOrgSettings()
@@ -872,8 +999,13 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       totalEstimatedHours += t.estimatedHours
       totalTrackedHoursForEst += (trackedMap[t._id.toString()] || 0) / 3600
     })
+    // The 0.1-hour floor this used to divide by turned "estimated but never tracked"
+    // (a real, reachable state — a task can be marked Completed with no time logged
+    // against it) into a nonsensical >4000% figure instead of "not measurable." null
+    // matches the convention used elsewhere in this report (e.g. utilization below)
+    // for "there's nothing meaningful to show here."
     const estimationAccuracy = totalEstimatedHours > 0
-      ? Math.round((totalEstimatedHours / Math.max(0.1, totalTrackedHoursForEst)) * 100)
+      ? (totalTrackedHoursForEst > 0 ? Math.round((totalEstimatedHours / totalTrackedHoursForEst) * 100) : null)
       : 100 // default to 100 if no estimates configured
 
     // Daily vs Assigned completion, tracked separately (Locked Logic §7) — Overall
@@ -1001,6 +1133,10 @@ export const getProgressReport = asyncHandler(async (req, res) => {
       _id: u._id,
       name: u.name,
       email: u.email,
+      // Present so consumers can distinguish "employee" rows from a manager/admin's
+      // own row now that this report is no longer employee-only (§7 of the hierarchy
+      // requirements) — the subject isn't always someone's direct report.
+      role: u.role,
       department: u.department?.name || "—",
       team: u.team?.name || "—",
       total,

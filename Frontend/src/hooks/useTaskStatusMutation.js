@@ -10,6 +10,7 @@ export function useTaskStatusMutation({ tasks, setTasks, detailTask, setDetailTa
   const updateStatus = async (taskId, status, comment) => {
     const prevTasks = tasks
     const prevDetailTask = detailTask
+    const current = tasks.find(t => t._id === taskId)
     const optimisticPatch = (t) => t._id === taskId
       ? { ...t, status, progressPercentage: PROGRESS_FOR_STATUS[status] ?? t.progressPercentage }
       : t
@@ -21,7 +22,13 @@ export function useTaskStatusMutation({ tasks, setTasks, detailTask, setDetailTa
     setSubmitting(true)
 
     try {
-      const res = await axios.put(`${API_BASE}/api/tasks/${taskId}/status`, { status, comment })
+      const res = await axios.put(`${API_BASE}/api/tasks/${taskId}/status`, {
+        status,
+        comment,
+        // Optimistic concurrency — the server rejects the write if someone else
+        // changed the task since this copy was loaded (mirrors useTaskMutation's patchTask).
+        updatedAt: current?.updatedAt
+      })
       setTasks(prev => prev.map(t => t._id === taskId ? res.data.task : t))
       if (detailTask && detailTask._id === taskId) {
         setDetailTask(res.data.task)
@@ -34,7 +41,7 @@ export function useTaskStatusMutation({ tasks, setTasks, detailTask, setDetailTa
       setTasks(prevTasks)
       setDetailTask(prevDetailTask)
       console.error("Error updating task status:", err)
-      return { success: false }
+      return { success: false, code: err.response?.data?.code }
     } finally {
       setSubmitting(false)
     }

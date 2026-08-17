@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "motion/react"
 import {
   ClipboardList, FileText, Network,
   LayoutDashboard, LogOut, ChevronRight, BarChart3,
-  Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon, TrendingUp
+  Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon, TrendingUp, Briefcase
 } from "lucide-react"
 
 const ROLE_CONFIG = {
@@ -19,6 +19,8 @@ const ROLE_CONFIG = {
     variant: "violet",
     links: [
       { to: "/super-admin", icon: LayoutDashboard, label: "Overview" },
+      { to: "/my-work", icon: Briefcase, label: "My Work" },
+      { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
       { to: "/team-tasks", icon: ClipboardList, label: "Team Tasks" },
       { to: "/super-admin/organization", icon: Network, label: "Organization" },
       { to: "/super-admin/reports", icon: BarChart3, label: "Reports & Analytics" },
@@ -31,6 +33,8 @@ const ROLE_CONFIG = {
     variant: "info",
     links: [
       { to: "/manager", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/my-work", icon: Briefcase, label: "My Work" },
+      { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
       { to: "/team-tasks", icon: ClipboardList, label: "Team Tasks" },
       { to: "/work-logs", icon: FileText, label: "Work Logs" },
     ],
@@ -156,7 +160,7 @@ const Layout = () => {
       </div>
 
       {/* Live Timer Widget */}
-      {user.role === "employee" && activeSession && (
+      {activeSession && (
         <div className={`p-4 m-4 rounded-xl bg-gradient-to-b from-card to-card/50 border shadow-lg space-y-3 relative overflow-hidden group transition-all duration-300 ${
           isRunning ? "border-primary/45 ring-1 ring-primary/20 shadow-primary/5" : "border-border/80"
         }`}>

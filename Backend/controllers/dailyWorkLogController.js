@@ -110,24 +110,35 @@ export const createLog = asyncHandler(async (req, res, next) => {
     return next(new AppError("Hours worked must be a number between 0 and 24", 400, "INVALID_HOURS"))
   }
 
-  // One log per person per day. Enforced here rather than with a unique index because
-  // `date` carries a time component, so a plain index wouldn't collapse to the day.
+  // One log per person per day. This pre-check is a fast, friendly rejection for the
+  // common case, not the actual guard — two concurrent submissions can both pass it
+  // before either commits. The real guard is the unique index on {employee, logDate}
+  // below, which MongoDB enforces atomically.
   const { start, end } = dayBounds()
   const existing = await DailyWorkLog.findOne({ employee: req.user.id, date: { $gte: start, $lt: end } })
   if (existing) {
     return next(new AppError("You have already submitted a work log for today", 409, "LOG_ALREADY_SUBMITTED"))
   }
 
-  const log = await DailyWorkLog.create({
-    employee: req.user.id,
-    date: new Date(),
-    todaysWork,
-    hoursWorked: hours,
-    tasksCompleted: tasksCompleted || "",
-    problemsFaced: problemsFaced || "",
-    nextPlan: nextPlan || "",
-    remarks: remarks || ""
-  })
+  let log
+  try {
+    log = await DailyWorkLog.create({
+      employee: req.user.id,
+      date: new Date(),
+      logDate: start,
+      todaysWork,
+      hoursWorked: hours,
+      tasksCompleted: tasksCompleted || "",
+      problemsFaced: problemsFaced || "",
+      nextPlan: nextPlan || "",
+      remarks: remarks || ""
+    })
+  } catch (err) {
+    if (err.code === 11000) {
+      return next(new AppError("You have already submitted a work log for today", 409, "LOG_ALREADY_SUBMITTED"))
+    }
+    throw err
+  }
 
   const populatedLog = await DailyWorkLog.findById(log._id)
     .populate("employee", "name email role")

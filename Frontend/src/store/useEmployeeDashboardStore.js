@@ -26,16 +26,25 @@ const useEmployeeDashboardStore = create((set, get) => ({
   // Tasks list + today's tracked hours — the two things that actually need refreshing
   // after a timer action or a status transition. Kept separate from daily provisioning
   // so a Start/Pause/Stop click doesn't re-provision daily tasks on every call.
-  setScope: async (scope) => {
+  //
+  // `userId` is optional and only matters for manager/super_admin callers reusing this
+  // store for their own "My Work" panel: GET /api/tasks already scopes a manager/admin
+  // to everything they can see (their whole team, or the org) — passing their own id as
+  // `assignedTo` narrows that down to just their own tasks, the same way it already
+  // narrows for anyone (see taskController.js's getTasks: "an explicit assignee narrows
+  // within the caller's scope — it never widens it"). A no-op for employees, who are
+  // already scoped to themselves server-side.
+  setScope: async (scope, userId) => {
     set({ scope })
-    await get().loadTasks()
+    await get().loadTasks(userId)
   },
 
-  loadTasks: async () => {
+  loadTasks: async (userId) => {
     try {
       const { scope } = get()
+      const assignedToParam = userId ? `&assignedTo=${userId}` : ""
       const [tasksRes, hoursRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/tasks?scope=${scope}`),
+        axios.get(`${API_BASE}/api/tasks?scope=${scope}${assignedToParam}`),
         axios.get(`${API_BASE}/api/work-sessions/today-hours`)
       ])
       set({ tasks: tasksRes.data.tasks, todayHours: hoursRes.data.hoursWorked })
@@ -47,19 +56,25 @@ const useEmployeeDashboardStore = create((set, get) => ({
   },
 
   // One-time setup on mount: provision today's daily tasks, then load the list.
-  provisionAndLoad: async () => {
+  provisionAndLoad: async (userId) => {
     await axios.get(`${API_BASE}/api/tasks/daily`).catch(() => {}) // idempotent, non-blocking on failure
-    await get().loadTasks()
+    await get().loadTasks(userId)
   },
 
   // Personal progress signals (completion rate, estimation accuracy, pattern flag,
-  // pending backlog) — scoped to just this employee server-side. Loaded separately,
+  // pending backlog) — scoped to just this person server-side. Loaded separately,
   // non-blocking, so a slow report call never delays the task list/timer UI.
-  loadMyReport: async () => {
+  //
+  // For an employee, employeeReport always contains exactly their own row, so index 0
+  // is safe. For a manager/super_admin, employeeReport now also contains their direct
+  // reports (or the whole org), so their own row must be looked up by id instead of
+  // assumed to be first.
+  loadMyReport: async (userId) => {
     try {
       set({ myReportError: false })
       const res = await axios.get(`${API_BASE}/api/tasks/report`)
-      const mine = res.data.employeeReport?.[0] ?? null
+      const report = res.data.employeeReport ?? []
+      const mine = userId ? (report.find(r => r._id === userId) ?? null) : (report[0] ?? null)
       set({ myReport: mine })
     } catch (err) {
       console.error("Error loading personal progress report:", err)

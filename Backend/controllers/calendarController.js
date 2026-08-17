@@ -10,6 +10,7 @@ import {
   getAbsencesInRange,
   startOfDay
 } from "../services/calendarService.js"
+import { scheduleDailyTaskCron } from "../services/dailyTaskCron.js"
 
 // How far ahead the client-side capacity forecast looks (TeamCapacityForecast renders
 // 7 days); fetch a little beyond that so the grid never renders a gap.
@@ -103,12 +104,20 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
     settings.holidays = [...byDate.values()].sort((a, b) => a.date - b.date)
   }
 
+  const timezoneChanged = timezone !== undefined && String(timezone).trim() !== settings.timezone
   if (timezone !== undefined) {
     settings.timezone = String(timezone).trim() || "Asia/Kolkata"
   }
 
   await settings.save()
   invalidateSettingsCache()
+
+  // The midnight provisioning cron is scheduled once at startup against whatever
+  // timezone was set then — without this, changing it here would silently do nothing
+  // until the next server restart.
+  if (timezoneChanged) {
+    await scheduleDailyTaskCron()
+  }
 
   res.json({ settings })
 })

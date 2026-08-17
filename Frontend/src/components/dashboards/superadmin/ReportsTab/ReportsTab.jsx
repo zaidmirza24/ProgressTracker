@@ -151,7 +151,7 @@ const ReportsTab = () => {
               <button
                 type="button"
                 onClick={() => setActiveSubTab("employees")}
-                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning-foreground transition-colors"
+                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-warning/30 bg-warning/5 hover:bg-warning/10 text-warning transition-colors"
               >
                 <TrendingDown className="h-4 w-4 shrink-0" />
                 <span className="text-sm font-bold">{patternCount}</span>

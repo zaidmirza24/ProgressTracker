@@ -1,11 +1,35 @@
+import mongoose from "mongoose"
 import bcrypt from "bcryptjs"
 import User from "../models/User.js"
 import Task from "../models/Task.js"
+import Department from "../models/Department.js"
+import Team from "../models/Team.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
 import { stopActiveSessionForEmployee } from "../services/taskService.js"
 
 const populateFields = "name email role department team manager isActive createdAt dailyWorkingHours breakHours"
+
+// Confirms department/team/manager actually reference real, active records — mirrors
+// teamController.validateTeamInput's check for a team's department, which existed
+// there but not here, letting a super_admin silently point a user at a nonexistent
+// or inactive department/team, or at an inactive manager.
+const validateUserReferences = async (department, team, manager, selfId = null) => {
+  if (department) {
+    if (!mongoose.isValidObjectId(department)) return "Invalid department"
+    if (!(await Department.exists({ _id: department, isActive: true }))) return "Department not found"
+  }
+  if (team) {
+    if (!mongoose.isValidObjectId(team)) return "Invalid team"
+    if (!(await Team.exists({ _id: team, isActive: true }))) return "Team not found"
+  }
+  if (manager) {
+    if (!mongoose.isValidObjectId(manager)) return "Invalid manager"
+    if (selfId && manager === selfId) return "A user cannot be their own manager"
+    if (!(await User.exists({ _id: manager, isActive: true }))) return "Manager not found or inactive"
+  }
+  return null
+}
 
 export const getUsers = asyncHandler(async (req, res) => {
   const users = await User.find({ isActive: true })
@@ -24,6 +48,10 @@ export const createUser = asyncHandler(async (req, res, next) => {
   }
   if (password.length < 6) {
     return next(new AppError("Password must be at least 6 characters", 400))
+  }
+  const referenceError = await validateUserReferences(department, team, manager)
+  if (referenceError) {
+    return next(new AppError(referenceError, 400, "INVALID_REFERENCE"))
   }
   const passwordHash = await bcrypt.hash(password, 10)
   const user = await User.create({
@@ -46,6 +74,10 @@ export const updateUser = asyncHandler(async (req, res, next) => {
   const { name, email, role, department, team, manager, dailyWorkingHours, breakHours } = req.body
   if (!name || !email || !role) {
     return next(new AppError("name, email, and role are required", 400))
+  }
+  const referenceError = await validateUserReferences(department, team, manager, req.params.id)
+  if (referenceError) {
+    return next(new AppError(referenceError, 400, "INVALID_REFERENCE"))
   }
   const user = await User.findByIdAndUpdate(
     req.params.id,
