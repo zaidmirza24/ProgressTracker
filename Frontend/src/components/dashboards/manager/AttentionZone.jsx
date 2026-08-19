@@ -36,7 +36,7 @@ const AttentionItem = ({ icon: Icon, count, label, targetId, to, tone = "warning
 
 const AttentionZone = () => {
   const tasks = useManagerDashboardStore(s => s.tasks)
-  const employees = useManagerDashboardStore(s => s.employees).filter(emp => emp.role === "employee")
+  const employees = useManagerDashboardStore(s => s.employees)
   const report = useManagerDashboardStore(s => s.report)
 
   const reviewCount = tasks.filter(t => t.status === "In Review").length
@@ -85,14 +85,14 @@ const AttentionZone = () => {
           <AttentionItem
             icon={Gauge}
             count={overCapacityCount}
-            label={overCapacityCount === 1 ? "employee over capacity today" : "employees over capacity today"}
+            label={overCapacityCount === 1 ? "team member over capacity today" : "team members over capacity today"}
             targetId="team-workload-section"
             tone="destructive"
           />
           <AttentionItem
             icon={TrendingDown}
             count={patternCount}
-            label={patternCount === 1 ? "employee flagged for estimation pattern" : "employees flagged for estimation pattern"}
+            label={patternCount === 1 ? "team member flagged for estimation pattern" : "team members flagged for estimation pattern"}
             targetId="team-signals-section"
             tone="warning"
           />

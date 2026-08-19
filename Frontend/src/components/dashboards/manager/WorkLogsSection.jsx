@@ -69,9 +69,11 @@ const WorkLogsSection = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">— Filter Employee —</SelectItem>
-              {employees.filter(e => e.role === "employee").map(emp => (
-                <SelectItem key={emp._id} value={emp._id}>{emp.name}</SelectItem>
+              <SelectItem value="all">— Filter Person —</SelectItem>
+              {employees.map(emp => (
+                <SelectItem key={emp._id} value={emp._id}>
+                  {emp.name}{emp.role && emp.role !== "employee" ? ` (${emp.role === "super_admin" ? "Admin" : "Manager"})` : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -87,7 +89,7 @@ const WorkLogsSection = () => {
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
-                <TableHead className="font-semibold text-foreground/80">Employee</TableHead>
+                <TableHead className="font-semibold text-foreground/80">Person</TableHead>
                 <TableHead className="font-semibold text-foreground/80">Date</TableHead>
                 <TableHead className="font-semibold text-foreground/80">Summary of Work Done</TableHead>
                 <TableHead className="font-semibold text-foreground/80">Hours</TableHead>
