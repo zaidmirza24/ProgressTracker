@@ -23,6 +23,9 @@ const TeamsTab = () => {
   const [form, setForm] = useState({ name: "", department: "" })
   const [saving, setSaving] = useState(false)
 
+  // Load once on mount. `fetchTeams` is a zustand action with a stable identity,
+  // so listing it as a dependency would be noise, not safety.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchTeams() }, [])
 
   const openCreate = () => {

@@ -68,9 +68,13 @@ const WorkLogs = () => {
     }
   }
 
+  // Load once on mount. Both loaders are defined in this component body and are
+  // recreated every render, so listing them would re-run this on every render —
+  // the empty dependency array is the intended behaviour, not an oversight.
   useEffect(() => {
     loadLogs()
     loadEmployees()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleFilterChange = async (empId) => {

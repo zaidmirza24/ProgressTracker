@@ -88,14 +88,20 @@ const MyWorkPanel = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPending])
 
-  // Sync details dialog with updated task context if it changes in the list
-  useEffect(() => {
-    if (detailTask) {
-      const updated = tasks.find(t => t._id === detailTask._id)
-      if (updated) setDetailTask(updated)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks])
+  // The open dialog always shows the freshest copy of its task.
+  //
+  // This used to be an effect that wrote `detailTask` back into state whenever `tasks`
+  // changed — a cascading render on every list refresh, and every timer tick that
+  // reloaded the list. Deriving it instead means there is nothing to keep in sync:
+  // `tasks` is the single source of truth and the dialog reads through to it.
+  //
+  // `detailTask` remains state because it records WHICH task is open (and the mutation
+  // hooks patch it optimistically); only the rendered value is derived. Falling back to
+  // the stored copy keeps the dialog usable for a task that has dropped out of the list,
+  // e.g. after a scope change.
+  const openDetailTask = detailTask
+    ? (tasks.find(t => t._id === detailTask._id) ?? detailTask)
+    : null
 
   // ─── Optimistic Status Transition ─────────────────────────────────────────
   // Mirrors the optimistic pattern already used for the timer; additionally syncs the
@@ -388,7 +394,7 @@ const MyWorkPanel = () => {
 
       {/* Task Detail Modal */}
       <EmployeeTaskDetailModal
-        detailTask={detailTask}
+        detailTask={openDetailTask}
         setDetailTask={setDetailTask}
         handleStatusTransition={handleStatusTransition}
         submitting={submitting}

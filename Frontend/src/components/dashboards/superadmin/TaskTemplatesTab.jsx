@@ -173,6 +173,9 @@ const TaskTemplatesTab = () => {
   })
   const [saving, setSaving] = useState(false)
 
+  // Load once on mount. `fetchTemplates` is a zustand action with a stable identity,
+  // so listing it as a dependency would be noise, not safety.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchTemplates() }, [])
 
   const openCreate = () => {

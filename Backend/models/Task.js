@@ -78,6 +78,29 @@ TaskSchema.index({ isActive: 1, status: 1, dueDate: 1 })
 // "What's blocked right now" is a dashboard-level question asked on every load.
 TaskSchema.index({ isBlocked: 1, isActive: 1 })
 
+// At most ONE active daily task per (employee, template, day).
+//
+// Provisioning does findOne-then-create, which is a check-then-act race: the midnight
+// cron and an employee's login self-heal run the same code by design, and when they
+// overlap both can see "no task yet" and both create one. Application logic cannot close
+// that on its own — only the database can, so this constraint is the guard and the
+// service handles the resulting duplicate-key error as "someone else already did it".
+//
+// Partial, so it applies only to active, template-derived daily tasks: cancelled
+// instances must not block a replacement, and ad-hoc tasks have no templateRef at all.
+//
+// DEPLOYMENT NOTE: building a unique index fails if the collection already contains
+// duplicates. A database that ran through the Iteration 13 bug, or through the race this
+// closes, may still hold some — collapse each (assignedTo, templateRef, dailyDate) group
+// to its oldest open instance before this index can be created.
+TaskSchema.index(
+  { assignedTo: 1, templateRef: 1, dailyDate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { isActive: true, isDaily: true, templateRef: { $type: "objectId" } }
+  }
+)
+
 const Task = mongoose.model("Task", TaskSchema)
 
 export default Task

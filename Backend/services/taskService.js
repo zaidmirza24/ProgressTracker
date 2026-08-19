@@ -37,10 +37,10 @@ export const calculateSessionElapsedSeconds = (session) => {
 }
 
 // Freezes a session's accumulated time and closes it out. Never deletes.
-const closeOutSession = async (session) => {
+const closeOutSession = async (session, dbSession = undefined) => {
   session.totalSeconds = calculateSessionElapsedSeconds(session)
   session.stoppedAt = new Date()
-  await session.save()
+  await session.save({ session: dbSession })
   return session
 }
 
@@ -50,16 +50,18 @@ const closeOutSession = async (session) => {
  *
  * @param {string} taskId
  * @param {string|null} employeeId - Optional; scopes to one employee's session
+ * @param {object} [dbSession] - Optional Mongoose transaction session; when passed,
+ *   the read and the write both join that transaction instead of committing alone.
  * @returns {Promise<object|null>} The stopped session, or null if none was running
  */
-export const stopRunningSessionForTask = async (taskId, employeeId = null) => {
+export const stopRunningSessionForTask = async (taskId, employeeId = null, dbSession = undefined) => {
   const filter = { task: taskId, stoppedAt: null }
   if (employeeId) filter.employee = employeeId
 
-  const session = await WorkSession.findOne(filter)
+  const session = await WorkSession.findOne(filter).session(dbSession)
   if (!session) return null
 
-  return closeOutSession(session)
+  return closeOutSession(session, dbSession)
 }
 
 /**
@@ -90,17 +92,25 @@ export const stopActiveSessionForEmployee = async (employeeId) => {
  * `create`; the loser retries, which by then finds the winner's session and stops it
  * instead, converging to a single active session rather than surfacing a 500 to the user.
  *
+ * Returns the sessions it STOPPED along the way, not just the new one. The caller needs
+ * them to put those tasks back to "Pending": reading the active session BEFORE calling
+ * this is unsafe under concurrency, because a competing request may not have created its
+ * session yet, leaving that task stranded as "In Progress" with no timer behind it.
+ *
  * @param {string} taskId
  * @param {string} employeeId
- * @returns {Promise<object>} The newly created, active WorkSession
+ * @returns {Promise<{session: object, stopped: object[]}>}
  */
-export const startSessionForTask = async (taskId, employeeId, attempt = 0) => {
-  await stopActiveSessionForEmployee(employeeId)
+export const startSessionForTask = async (taskId, employeeId, attempt = 0, stopped = []) => {
+  const justStopped = await stopActiveSessionForEmployee(employeeId)
+  if (justStopped) stopped.push(justStopped)
+
   try {
-    return await WorkSession.create({ task: taskId, employee: employeeId, startedAt: new Date() })
+    const session = await WorkSession.create({ task: taskId, employee: employeeId, startedAt: new Date() })
+    return { session, stopped }
   } catch (err) {
     if (err.code === 11000 && attempt < 3) {
-      return startSessionForTask(taskId, employeeId, attempt + 1)
+      return startSessionForTask(taskId, employeeId, attempt + 1, stopped)
     }
     throw err
   }

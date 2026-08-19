@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import axios from "axios"
 import API_BASE from "../../lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -39,6 +39,42 @@ const TaskDetailModalCore = ({
   actionPanel
 }) => {
   const [newComment, setNewComment] = useState("")
+  // The full task, fetched when this dialog opens.
+  //
+  // `history` and `comments` are unbounded, so the list endpoint summarises them away —
+  // sending them on every row made a manager's task list 54.9MB after two years of use.
+  // They are rendered in exactly one place, right here, so this is where their cost is
+  // paid: once, by the person who asked to see them.
+  const [fullTask, setFullTask] = useState(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+
+  const openTaskId = detailTask?._id
+  // A task that already carries the arrays came straight from a mutation response, which
+  // still returns them in full — no need to ask again.
+  const alreadyComplete = Boolean(detailTask?.comments && detailTask?.history)
+
+  useEffect(() => {
+    if (!openTaskId || alreadyComplete) {
+      setFullTask(null)
+      return undefined
+    }
+
+    let cancelled = false
+    setLoadingDetail(true)
+    axios.get(`${API_BASE}/api/tasks/${openTaskId}`)
+      .then(res => { if (!cancelled) setFullTask(res.data.task) })
+      .catch(err => { if (!cancelled) console.error("Error loading task detail:", err) })
+      .finally(() => { if (!cancelled) setLoadingDetail(false) })
+
+    return () => { cancelled = true }
+  }, [openTaskId, alreadyComplete])
+
+  // Render the fullest copy available. Falling back to `detailTask` keeps the dialog
+  // usable while the fetch is in flight, and keeps optimistic mutations visible at once.
+  const view = (alreadyComplete ? detailTask : fullTask) ?? detailTask
+  // Counts come from the list row, so the tab labels are right before the fetch lands.
+  const commentCount = detailTask?.commentCount ?? view?.comments?.length ?? 0
+  const historyCount = detailTask?.historyCount ?? view?.history?.length ?? 0
 
   const handlePostComment = async (e) => {
     e.preventDefault()
@@ -202,23 +238,27 @@ const TaskDetailModalCore = ({
               <Tabs defaultValue="comments" className="w-full">
                 <TabsList className="grid w-full grid-cols-2 bg-muted/60 p-1 rounded-xl h-9 mb-4">
                   <TabsTrigger value="comments" className="text-xs font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground">
-                    Discussion ({detailTask.comments?.length || 0})
+                    Discussion ({commentCount})
                   </TabsTrigger>
                   <TabsTrigger value="history" className="text-xs font-bold rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground">
-                    Workflow Audit Log ({detailTask.history?.length || 0})
+                    Workflow Audit Log ({historyCount})
                   </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="comments" className="space-y-3 mt-0 focus-visible:outline-none">
                   {/* Comment log stream */}
                   <ScrollArea className="h-[180px] border border-border/40 rounded-xl bg-muted/10 p-3">
-                    {detailTask.comments.length === 0 ? (
+                    {loadingDetail && !view.comments ? (
+                      <div className="h-full flex items-center justify-center py-8">
+                        <p className="text-xs text-muted-foreground italic">Loading discussion…</p>
+                      </div>
+                    ) : !view.comments || view.comments.length === 0 ? (
                       <div className="h-full flex items-center justify-center py-8">
                         <p className="text-xs text-muted-foreground italic">No activities logged yet.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {detailTask.comments.map(c => {
+                        {view.comments.map(c => {
                           return (
                             <div key={c._id} className="text-xs flex gap-2.5 items-start">
                               <PersonAvatar name={c.author?.name} seed={c.author?._id} fallback="US" className="h-6 w-6 text-[9px]" />
@@ -253,13 +293,17 @@ const TaskDetailModalCore = ({
                 <TabsContent value="history" className="space-y-3 mt-0 focus-visible:outline-none">
                   {/* History log stream */}
                   <ScrollArea className="h-[220px] border border-border/40 rounded-xl bg-muted/10 p-3">
-                    {!detailTask.history || detailTask.history.length === 0 ? (
+                    {loadingDetail && !view.history ? (
+                      <div className="h-full flex items-center justify-center py-8">
+                        <p className="text-xs text-muted-foreground italic">Loading history…</p>
+                      </div>
+                    ) : !view.history || view.history.length === 0 ? (
                       <div className="h-full flex items-center justify-center py-8">
                         <p className="text-xs text-muted-foreground italic">No state changes logged yet.</p>
                       </div>
                     ) : (
                       <div className="space-y-4 pl-3 relative border-l border-border/60 ml-2.5 my-2">
-                        {detailTask.history.map((h, i) => {
+                        {view.history.map((h, i) => {
                           return (
                             <div key={h._id || i} className="relative text-xs space-y-1">
                               {/* Connector dot */}

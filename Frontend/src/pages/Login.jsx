@@ -34,6 +34,14 @@ const Login = () => {
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showSeeder, setShowSeeder] = useState(false)
+
+  // Demo-credential shortcuts are a development convenience and must not reach a
+  // production bundle: they put working plaintext passwords for an admin, a manager and
+  // an employee into JavaScript that anyone can read, right next to the login form.
+  //
+  // `import.meta.env.DEV` is a compile-time constant, so the entire block below is
+  // removed by the bundler in a production build rather than merely hidden at runtime.
+  const showDemoCredentials = import.meta.env.DEV
   const [seededRole, setSeededRole] = useState(null)
   
   const { user, login } = useAuth()
@@ -303,7 +311,8 @@ const Login = () => {
                 </Button>
               </form>
 
-              {/* Demo Credentials Quick-Seeder Widget */}
+              {/* Demo Credentials Quick-Seeder Widget — development builds only */}
+              {showDemoCredentials && (
               <div className="mt-5 pt-4 border-t border-border/30">
                 <button
                   type="button"
@@ -318,7 +327,7 @@ const Login = () => {
                 </button>
                 
                 <AnimatePresence>
-                  {showSeeder && (
+                  {showDemoCredentials && showSeeder && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
@@ -358,6 +367,7 @@ const Login = () => {
                   )}
                 </AnimatePresence>
               </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>

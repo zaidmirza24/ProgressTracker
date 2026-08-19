@@ -1,5 +1,5 @@
 import express from "express"
-import { getTasks, createTask, updateTask, cancelTask, setTaskBlocked, updateTaskStatus, addComment, ensureDailyTasks, getProgressReport } from "../controllers/taskController.js"
+import { getTasks, getTaskById, createTask, updateTask, cancelTask, setTaskBlocked, updateTaskStatus, addComment, ensureDailyTasks, getProgressReport } from "../controllers/taskController.js"
 import { authenticateJWT, requireRole } from "../middleware/authMiddleware.js"
 
 const router = express.Router()
@@ -10,6 +10,9 @@ router.use(authenticateJWT)
 router.get("/", getTasks)
 router.get("/daily", requireRole(["employee", "manager", "super_admin"]), ensureDailyTasks)
 router.get("/report", requireRole(["super_admin", "manager", "employee"]), getProgressReport)
+// MUST stay below /daily and /report, or ":id" would swallow them. Serves the full task
+// including history and comments, which the list endpoint deliberately summarises away.
+router.get("/:id", getTaskById)
 router.post("/", requireRole(["manager", "super_admin", "employee"]), createTask)
 // Field edits (incl. reassignment). Role nuance is handled inside the controller —
 // employees may edit a narrower field set on their own self-created tasks — so this

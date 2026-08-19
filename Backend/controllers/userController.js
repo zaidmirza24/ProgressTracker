@@ -88,7 +88,7 @@ export const updateUser = asyncHandler(async (req, res, next) => {
       ...(dailyWorkingHours !== undefined && { dailyWorkingHours }),
       ...(breakHours !== undefined && { breakHours })
     },
-    { new: true }
+    { returnDocument: "after", runValidators: true }
   ).select(populateFields)
     .populate("department", "name")
     .populate("team", "name")

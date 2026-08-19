@@ -28,8 +28,11 @@ const ReportsTab = () => {
   const setStartDate = useReportsStore(s => s.setStartDate)
   const setEndDate = useReportsStore(s => s.setEndDate)
 
+  // Refetch whenever the selected timeframe changes. `fetchReports` is a zustand
+  // action with a stable identity — including it would not change when this runs.
   useEffect(() => {
     fetchReports()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeframe, startDate, endDate])
 
   if (error && !reports) {

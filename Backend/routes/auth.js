@@ -13,6 +13,15 @@ const loginLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip entirely when explicitly opted out — the E2E suite's five flows run every
+  // login through the real form across a single long-lived backend process and a
+  // single source IP (Playwright's own browser), so a normal run legitimately exceeds
+  // this limit despite having no real user behind it. Never set by anything but
+  // e2e/playwright.config.js: the limiter's own behaviour (correct password also
+  // blocked once tripped, block clears after the window) is already covered by the
+  // backend integration suite, so E2E doesn't need to re-prove it — it just needs to
+  // not be blocked by it.
+  skip: () => process.env.DISABLE_LOGIN_RATE_LIMIT === "true",
   message: { success: false, message: "Too many login attempts. Please try again in a few minutes.", code: "TOO_MANY_ATTEMPTS" }
 })
 

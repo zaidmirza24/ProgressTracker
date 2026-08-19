@@ -19,18 +19,19 @@ export const getLogs = asyncHandler(async (req, res) => {
     // Employees see only their own logs
     filter.employee = req.user.id
   } else if (req.user.role === "manager") {
-    // Managers see logs of their subordinates
+    // A manager sees their direct reports' logs AND their own — they now write one too,
+    // and a page that hid your own submission from you would be plainly odd.
     const subordinates = await User.find({ manager: req.user.id, isActive: true }).select("_id")
-    const subordinateIds = subordinates.map(sub => sub._id)
+    const visibleIds = [...subordinates.map(sub => sub._id.toString()), req.user.id]
 
     if (req.query.employee) {
-      // Ensure the queried employee reports to this manager
-      if (!subordinateIds.some(id => id.toString() === req.query.employee)) {
-        return res.json({ logs: [] }) // Or return error; let's return empty array safely
+      // Asking for a specific person must still respect scope.
+      if (!visibleIds.includes(req.query.employee)) {
+        return res.json({ logs: [] })
       }
       filter.employee = req.query.employee
     } else {
-      filter.employee = { $in: subordinateIds }
+      filter.employee = { $in: visibleIds }
     }
   } else if (req.user.role === "super_admin") {
     // Super Admin sees all logs
@@ -58,7 +59,11 @@ export const getLogs = asyncHandler(async (req, res) => {
 export const getTodayContext = asyncHandler(async (req, res) => {
   const { start, end } = dayBounds()
 
-  if (req.user.role === "employee") {
+  // Everyone gets their OWN context — what they finished today, what they tracked, and
+  // whether they have already submitted. Management additionally gets the compliance
+  // view below. The response is additive rather than branching on role, so a manager
+  // now receives both and existing consumers of either half are unaffected.
+  const buildOwnContext = async () => {
     const completedToday = await Task.find({
       assignedTo: req.user.id,
       isActive: true,
@@ -73,28 +78,45 @@ export const getTodayContext = asyncHandler(async (req, res) => {
 
     const existing = await DailyWorkLog.findOne({ employee: req.user.id, date: { $gte: start, $lt: end } })
 
-    return res.json({
+    return {
       completedToday: completedToday.map(t => ({ _id: t._id, title: t.title })),
       trackedHours: Math.round((trackedSeconds / 3600) * 100) / 100,
       alreadySubmitted: Boolean(existing)
-    })
+    }
   }
 
-  // Manager sees their own reports; super_admin the whole org.
-  const userFilter = { isActive: true, role: "employee" }
-  if (req.user.role === "manager") userFilter.manager = req.user.id
-  const employees = await User.find(userFilter).select("name email").lean()
+  const own = await buildOwnContext()
+
+  if (req.user.role === "employee") {
+    return res.json(own)
+  }
+
+  // ── Compliance: whose submission is this caller responsible for chasing? ─────
+  //
+  // Deliberately NOT the same question as "who may submit". A manager chases their own
+  // reports, not themselves; an admin chases employees and managers alike. Keeping the
+  // caller out of their own missing-list is the point — their own status is in `own`
+  // above.
+  const userFilter = { isActive: true, _id: { $ne: req.user.id } }
+  if (req.user.role === "manager") {
+    userFilter.role = "employee"
+    userFilter.manager = req.user.id
+  } else {
+    userFilter.role = { $in: ["employee", "manager"] }
+  }
+  const people = await User.find(userFilter).select("name email role").lean()
 
   const logs = await DailyWorkLog.find({
-    employee: { $in: employees.map(e => e._id) },
+    employee: { $in: people.map(e => e._id) },
     date: { $gte: start, $lt: end }
   }).select("employee").lean()
 
   const submittedIds = new Set(logs.map(l => l.employee.toString()))
   res.json({
-    total: employees.length,
-    submitted: employees.filter(e => submittedIds.has(e._id.toString())),
-    missing: employees.filter(e => !submittedIds.has(e._id.toString()))
+    ...own,
+    total: people.length,
+    submitted: people.filter(e => submittedIds.has(e._id.toString())),
+    missing: people.filter(e => !submittedIds.has(e._id.toString()))
   })
 })
 

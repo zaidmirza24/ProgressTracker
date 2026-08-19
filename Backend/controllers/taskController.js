@@ -6,6 +6,7 @@ import WorkSession from "../models/WorkSession.js"
 import { isValidTransition, TASK_STATUSES } from "../config/workflow.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
+import { runInTransaction } from "../utils/transaction.js"
 import { provisionDailyTasksForEmployee } from "../services/dailyTaskService.js"
 import {
   calculateSessionElapsedSeconds,
@@ -16,10 +17,22 @@ import {
   getOrgSettings,
   getAbsencesInRange,
   getCapacityForDay,
-  workingDaysBetween,
   isSameCalendarDay
 } from "../services/calendarService.js"
 import { buildScopeFilter, TASK_SCOPES } from "../services/taskScopeService.js"
+import {
+  computeOverrunFields,
+  getReworkCount,
+  wasEverReviewed,
+  getLastReworkFeedback,
+  getBlockedAgeDays,
+  getProgressForStatus,
+  PATTERN_LOOKBACK,
+  PATTERN_MIN_SAMPLE,
+  PATTERN_THRESHOLD,
+  QUALITY_MIN_SAMPLE,
+  QUALITY_THRESHOLD
+} from "../services/taskMetrics.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,11 +59,25 @@ const attachTrackedSecondsToTasks = async (taskObjects) => {
   return taskObjects.map(t => {
     const id = t._id.toString()
     const totalTrackedSeconds = (stoppedMap[id] || 0) + (activeMap[id] || 0)
+
+    // `history` and `comments` are UNBOUNDED — they grow for as long as a task is worked
+    // on — and shipping them on every row is what made a manager's task list 54.9MB and
+    // 15.6 seconds after two years of use (tests/perf/budgets.test.js). They are summarised
+    // here and served in full by GET /api/tasks/:id, which is the only place that renders
+    // them.
+    const { history, comments, ...rest } = t
+    const lastComment = comments?.length ? comments[comments.length - 1] : null
+
     return {
-      ...t,
+      ...rest,
       totalTrackedSeconds,
-      // Derived from history already loaded on the document — no extra query.
+      // Still derived from the history that was loaded — the saving is in what is SENT,
+      // not in what is read, so no extra query is needed and no signal is lost.
       reworkCount: getReworkCount(t),
+      historyCount: history?.length ?? 0,
+      commentCount: comments?.length ?? 0,
+      // The review queue shows the latest note inline; that one entry is worth its bytes.
+      lastComment: lastComment ? { text: lastComment.text, createdAt: lastComment.createdAt } : null,
       ...computeOverrunFields(t.estimatedHours, totalTrackedSeconds)
     }
   })
@@ -70,58 +97,44 @@ const getTaskWithTime = async (task) => {
   return tObj
 }
 
-// Compute Estimated vs Actual variance/overrun fields (Locked Logic §5)
-const computeOverrunFields = (estimatedHours, totalTrackedSeconds) => {
-  const estimatedSeconds = (estimatedHours || 0) * 3600
-  const timeVarianceSeconds = totalTrackedSeconds - estimatedSeconds
-  const overrunPercentage = estimatedSeconds > 0
-    ? Math.round((timeVarianceSeconds / estimatedSeconds) * 100)
-    : 0
-  const isOverrun = estimatedSeconds > 0 && timeVarianceSeconds > 0
-  return { timeVarianceSeconds, overrunPercentage, isOverrun }
-}
+// Task-metric derivations (overrun, rework, blocked age, progress mapping, and the
+// pattern/quality thresholds) live in services/taskMetrics.js — they are pure
+// functions of their arguments and are imported at the top of this file.
 
-// Estimation pattern detection (Locked Logic §10) — a majority of the last few
-// completed+estimated tasks overrunning is a signal worth surfacing, never punitive.
-const PATTERN_LOOKBACK = 5
-const PATTERN_MIN_SAMPLE = 3
-const PATTERN_THRESHOLD = 0.5
-
-// Quality / rework (Locked Logic §9, §11). Derived entirely from task.history — no new
-// state is stored, so these numbers are available retroactively for every task already
-// in the database.
+// Persist a mutated task, refusing the write if someone else changed it first.
 //
-// Crucially, no role check is needed: employees have NO "In Review" transition in
-// WORKFLOW_RULES at all, so an "In Review" -> "In Progress" entry can only have been a
-// manager sending work back. That makes rework unambiguously identifiable from history.
-const QUALITY_MIN_SAMPLE = 3
-const QUALITY_THRESHOLD = 0.5
+// The `updatedAt` comparison used to be read-compare-write in JavaScript: load the task,
+// compare versions, mutate, save. That correctly rejects a STALE write (a browser tab
+// left open, where the requests are sequential) but does nothing about two SIMULTANEOUS
+// writes — both read the same version, both pass the check, both save, and one edit is
+// silently lost, which is precisely what the check exists to prevent (§29).
+//
+// Pushing the comparison into the update filter makes MongoDB perform the
+// compare-and-swap atomically: the second writer matches no document and is told.
+//
+// `$getChanges()` yields the same delta `save()` would have issued, including the
+// `$push` onto history, so the mutation code above is unchanged. Callers that send no
+// `updatedAt` keep the previous unconditional behaviour.
+//
+// Thrown (never surfaced to the client directly) to abort an in-progress transaction
+// when the optimistic-concurrency check fails partway through it — see updateTaskStatus.
+class VersionConflict extends Error {}
 
-const getReworkCount = (task) =>
-  (task.history || []).filter(h => h.fromStatus === "In Review" && h.toStatus === "In Progress").length
+// @param {object} [dbSession] - Optional Mongoose transaction session
+// @returns {Promise<boolean>} false when the task was modified by someone else
+const saveTaskWithVersionGuard = async (task, expectedUpdatedAt, dbSession = undefined) => {
+  if (!expectedUpdatedAt) {
+    await task.save({ session: dbSession })
+    return true
+  }
 
-// Only review-gated work can have a first-pass rate. Daily and self-assigned tasks skip
-// review entirely by design, so including them would drown the denominator and report a
-// permanent ~100% for everyone.
-const wasEverReviewed = (task) =>
-  (task.history || []).some(h => h.toStatus === "In Review")
-
-// The feedback a manager gave when they last sent it back — the actionable part.
-const getLastReworkFeedback = (task) => {
-  const entry = [...(task.history || [])].reverse()
-    .find(h => h.fromStatus === "In Review" && h.toStatus === "In Progress")
-  return entry?.comment || ""
-}
-
-// How long a task has been BLOCKED, in working days. This is the metric Locked Logic §8
-// actually asked for ("track pending backlog, including how long each task has sat
-// pending") — the old pending-age metric measured time since the timer was paused,
-// which is mostly evenings and weekends, not waiting.
-const getBlockedAgeDays = (task, settings) => {
-  if (!task.isBlocked || !task.blockedAt) return null
-  const since = new Date(task.blockedAt)
-  if (!settings) return Math.max(0, (Date.now() - since.getTime()) / (1000 * 60 * 60 * 24))
-  return Math.max(0, workingDaysBetween(since, new Date(), settings) - 1)
+  const changes = task.$getChanges()
+  const result = await Task.findOneAndUpdate(
+    { _id: task._id, updatedAt: new Date(expectedUpdatedAt) },
+    changes,
+    { returnDocument: "after", timestamps: true, session: dbSession }
+  )
+  return Boolean(result)
 }
 
 // Authorization scope for task-level actions (status updates, comments) — mirrors
@@ -139,18 +152,6 @@ const hasTaskAccess = async (req, task) => {
     return !!assigneeIsSubordinate
   }
   return false
-}
-
-// Map status → default progress %
-const getProgressForStatus = (status) => {
-  switch (status) {
-    case "Not Started": return 0
-    case "In Progress": return 50
-    case "Pending": return 50
-    case "In Review": return 90
-    case "Completed": return 100
-    default: return 0
-  }
 }
 
 // Locked Logic §6 — "A new assignment that would push planned work past capacity must
@@ -233,9 +234,17 @@ export const getTasks = asyncHandler(async (req, res, next) => {
   const scopeFilter = buildScopeFilter(scope)
   if (scopeFilter) conditions.push(scopeFilter)
 
-  // Reject anything that isn't a plain string matching a real status — Express's query
-  // parser turns bracket syntax like `?status[$ne]=Completed` into an object, which would
-  // otherwise reach the Mongo query as a live operator instead of a status to match.
+  // Reject anything that isn't a plain string matching a real status, so a non-string
+  // value can never reach the Mongo query as a live operator instead of a status.
+  //
+  // Under this app's Express 5 the query parser defaults to `simple`, so bracket syntax
+  // like `?status[$ne]=Completed` parses as the literal key "status[$ne]" and never
+  // becomes an object at all (Express 4's `extended` default did build one). What DOES
+  // still arrive as a non-string here is a repeated parameter — `?status=a&status=b`
+  // yields an array — and that is what this guard catches today. It is kept deliberately
+  // broad rather than narrowed to arrays: it must also hold if the query parser is ever
+  // switched back to `extended`. Both cases are covered in
+  // tests/integration/task-authorization.test.js.
   if (status) {
     if (typeof status !== "string" || !TASK_STATUSES.includes(status)) {
       return next(new AppError(`status must be one of: ${TASK_STATUSES.join(", ")}`, 400, "INVALID_STATUS"))
@@ -253,12 +262,14 @@ export const getTasks = asyncHandler(async (req, res, next) => {
 
   const filter = { isActive: true, ...(conditions.length > 0 && { $and: conditions }) }
 
+  // Deliberately does NOT populate comments.author or history.changedBy: those two
+  // populates alone issued six separate queries against `users` per request, and the
+  // arrays they resolve are summarised rather than sent (see attachTrackedSecondsToTasks).
+  // The detail endpoint populates them.
   let query = Task.find(filter)
     .populate("assignedTo", "name email")
     .populate("assignedBy", "name email")
     .populate("department", "name")
-    .populate("comments.author", "name email role")
-    .populate("history.changedBy", "name email role")
     .sort({ isDaily: -1, updatedAt: -1 }) // Daily tasks appear first
 
   // Pagination is opt-in so callers that need the whole set (the manager dashboard's
@@ -282,6 +293,40 @@ export const getTasks = asyncHandler(async (req, res, next) => {
     scope: scope || "all",
     ...(total !== null && { total, page: parsedPage, limit: parsedLimit })
   })
+})
+
+// ─── GET /api/tasks/:id ───────────────────────────────────────────────────────
+// The full task, including the unbounded `history` and `comments` arrays that the list
+// endpoint summarises away. Fetched when a detail view is opened, which is the only
+// place they are rendered — so their cost is paid once, by the person who asked to see
+// them, instead of on every row of every list.
+export const getTaskById = asyncHandler(async (req, res, next) => {
+  const { id } = req.params
+
+  if (!mongoose.isValidObjectId(id)) {
+    return next(new AppError("Task not found", 404, "TASK_NOT_FOUND"))
+  }
+
+  const task = await Task.findById(id)
+  if (!task || !task.isActive) {
+    return next(new AppError("Task not found", 404, "TASK_NOT_FOUND"))
+  }
+
+  // Same scope as every other single-task action — a detail view must not become a way
+  // to read a task the caller cannot otherwise touch.
+  if (!(await hasTaskAccess(req, task))) {
+    return next(new AppError("You do not have permission to view this task", 403, "FORBIDDEN"))
+  }
+
+  const populatedTask = await Task.findById(id)
+    .populate("assignedTo", "name email")
+    .populate("assignedBy", "name email")
+    .populate("department", "name")
+    .populate("comments.author", "name email role")
+    .populate("history.changedBy", "name email role")
+    .populate("blockedBy", "name")
+
+  res.json({ task: await getTaskWithTime(populatedTask) })
 })
 
 // ─── POST /api/tasks ──────────────────────────────────────────────────────────
@@ -403,16 +448,49 @@ export const updateTaskStatus = asyncHandler(async (req, res, next) => {
   // so the elapsed-seconds calculation stays consistent with the timer endpoints —
   // the previous inline versions measured from `startedAt` unconditionally and so
   // counted paused time as worked time.
+  let versionGuardOk
   if (finalStatus === "In Progress" && oldStatus !== "In Progress") {
     // Stops any currently active timer for this employee, then starts a new one for
     // this task — race-safe against concurrent start requests (see startSessionForTask).
+    // NOT wrapped in the transaction below on purpose: its concurrency safety comes
+    // from a stop-then-create sequence that reacts to the database's own duplicate-key
+    // rejection (Locked Logic §2's partial unique index) plus a reconciliation pass
+    // after — see the comment on startSessionForTask. Forcing that into transaction
+    // semantics (where a duplicate-key error aborts the whole transaction rather than
+    // being caught and retried in place) would change its failure behaviour, and it
+    // is already pinned by Phase 3's concurrency suite. The atomicity gap this
+    // transaction closes is the OTHER direction below, which had no such mechanism.
     await startSessionForTask(task._id, req.user.id)
+    versionGuardOk = await saveTaskWithVersionGuard(task, updatedAt)
   } else if (oldStatus === "In Progress" && finalStatus !== "In Progress") {
-    // Moving OUT of In Progress stops this task's session, retaining its time (Locked §2)
-    await stopRunningSessionForTask(task._id, req.user.id)
+    // Moving OUT of In Progress stops this task's session, retaining its time (Locked
+    // §2). Session-stop and task-save now commit together — previously two independent
+    // writes, so a crash between them could leave a stopped session behind a task that
+    // still read "In Progress" with no timer running (Engineering Standards §10).
+    //
+    // A version conflict must abort the WHOLE transaction, not just skip the task
+    // write — otherwise the session-stop half would commit anyway even though the
+    // client is about to be told to reload and retry. Throwing (rather than returning
+    // false) is what makes withTransaction roll it back.
+    try {
+      await runInTransaction(async (dbSession) => {
+        await stopRunningSessionForTask(task._id, req.user.id, dbSession)
+        if (!(await saveTaskWithVersionGuard(task, updatedAt, dbSession))) {
+          throw new VersionConflict()
+        }
+      })
+      versionGuardOk = true
+    } catch (err) {
+      if (!(err instanceof VersionConflict)) throw err
+      versionGuardOk = false
+    }
+  } else {
+    versionGuardOk = await saveTaskWithVersionGuard(task, updatedAt)
   }
 
-  await task.save()
+  if (!versionGuardOk) {
+    return next(new AppError("This task was changed by someone else. Reload to see the latest version.", 409, "TASK_MODIFIED"))
+  }
 
   const populatedTask = await Task.findById(id)
     .populate("assignedTo", "name email")
@@ -639,7 +717,9 @@ export const updateTask = asyncHandler(async (req, res, next) => {
     comment: comment?.trim() || ""
   })
 
-  await task.save()
+  if (!(await saveTaskWithVersionGuard(task, updatedAt))) {
+    return next(new AppError("This task was changed by someone else. Reload to see the latest version.", 409, "TASK_MODIFIED"))
+  }
 
   const populatedTask = await Task.findById(id)
     .populate("assignedTo", "name email")
@@ -892,6 +972,11 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     if (endDate.length <= 10) {
       end.setUTCHours(23, 59, 59, 999)
     }
+    // Filtered on `startedAt`, matching the day-attribution rule documented in
+    // workSessionController.getTodayTrackedHours: a session belongs wholly to the day it
+    // started. A session that began before this range therefore belongs to an earlier
+    // period and is correctly excluded, even though part of its clock ran inside the
+    // range — the alternative would report the same hours in two different periods.
     matchSession.startedAt = { $gte: start, $lte: end }
     activeSessionFilter.startedAt = { $gte: start, $lte: end }
   }
@@ -927,7 +1012,7 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   }
   const overdueTasks = await Task.find(overdueQuery)
     .select("assignedTo department priority")
-    .populate({ path: "assignedTo", select: "team" })
+    .populate({ path: "assignedTo", select: "team department" })
     .lean()
 
   const overdueByEmployee = {}
@@ -938,7 +1023,8 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     const empId = t.assignedTo?._id?.toString()
     if (empId) overdueByEmployee[empId] = (overdueByEmployee[empId] || 0) + 1
 
-    const deptId = t.department?.toString() || "unassigned"
+    // Same department-of-record rule as departmentReport below.
+    const deptId = (t.department ?? t.assignedTo?.department)?.toString() || "unassigned"
     overdueByDept[deptId] = (overdueByDept[deptId] || 0) + 1
 
     const teamId = t.assignedTo?.team?.toString() || "unassigned"
@@ -1186,10 +1272,31 @@ export const getProgressReport = asyncHandler(async (req, res) => {
   })
 
   // ── 5. Department-wise report ─────────────────────────────────────────────
+  // DEPARTMENT OF RECORD: the task's own department when one is set, otherwise the
+  // assignee's.
+  //
+  // This report used to group purely on `task.department`, which createTask leaves null
+  // unless a manager fills that field — so nearly everything landed in "Unassigned" and
+  // real departments read as zero, while the Teams report sitting beside it (grouped by
+  // the PERSON's team) showed the same work under a real team. Two tables, the same
+  // people, no way to tell why they disagreed (§14).
+  //
+  // Falling back rather than ignoring `task.department` keeps the case the field exists
+  // for: an engineer doing a piece of Finance work stays attributed to Finance. Only the
+  // reporting changes — no stored task is touched.
+  //
+  // The assignee's department is read from `users`, which is already loaded and
+  // populated, so this costs no extra query. A task whose assignee is outside that set
+  // (e.g. deactivated) still falls through to "Unassigned".
+  const departmentByUserId = new Map(
+    users.map(u => [u._id.toString(), u.department])
+  )
+
   const deptMap = {}
   tasks.forEach(t => {
-    const deptId = t.department?._id?.toString() || "unassigned"
-    const deptName = t.department?.name || "Unassigned"
+    const department = t.department ?? departmentByUserId.get(t.assignedTo?._id?.toString())
+    const deptId = department?._id?.toString() || "unassigned"
+    const deptName = department?.name || "Unassigned"
     if (!deptMap[deptId]) deptMap[deptId] = { deptId, deptName, tasks: [] }
     deptMap[deptId].tasks.push(t)
   })

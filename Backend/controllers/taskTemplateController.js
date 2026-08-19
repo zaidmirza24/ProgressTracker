@@ -14,6 +14,17 @@ const validateIdArray = (ids, label) => {
   return null
 }
 
+// Fire-and-forget: a manager saving a template shouldn't wait for provisioning to run
+// across every employee before getting their response back. The `.catch` here is load
+// -bearing, not decoration — an unhandled rejection on a promise nobody's awaiting would
+// hit index.js's unhandledRejection handler and take the whole server down over a single
+// employee's provisioning failing. dailyTaskService already logs and continues past
+// per-employee failures; this only needs to catch a failure of the batch call itself.
+const provisionInBackground = () => {
+  provisionDailyTasksForAllEmployees()
+    .catch(err => console.error("Background daily-task provisioning failed:", err.message))
+}
+
 // GET /api/task-templates — list all (admin only)
 export const getTemplates = asyncHandler(async (req, res) => {
   const templates = await TaskTemplate.find({ isActive: true })
@@ -49,7 +60,13 @@ export const createTemplate = asyncHandler(async (req, res, next) => {
   // Provision today's task from this template for every currently-eligible employee
   // right away, rather than waiting for each employee's next login / the midnight cron
   // (see services/dailyTaskService.js — same single source of truth for the logic).
-  await provisionDailyTasksForAllEmployees()
+  // Not awaited — see provisionInBackground's comment for why, and the tradeoff that
+  // comes with it: the response below confirms the template is saved, not that
+  // provisioning has finished. An employee whose dashboard is already open in-session
+  // still won't see it appear live (no polling/websockets, unchanged from before) — it
+  // surfaces on their next load either way, so this trades a slower "confirmed done"
+  // response for a faster "confirmed queued" one without changing what the employee sees.
+  provisionInBackground()
 
   const populated = await TaskTemplate.findById(template._id)
     .populate("departments", "name")
@@ -91,10 +108,11 @@ export const updateTemplate = asyncHandler(async (req, res, next) => {
 
   await template.save()
 
-  // Same immediate-provisioning as create: an edit that (re)activates a template, or
-  // widens/changes who it applies to, should surface today's task right away.
+  // Same immediate-provisioning as create, and same fire-and-forget reasoning: an edit
+  // that (re)activates a template, or widens/changes who it applies to, should still
+  // kick off today's task right away without making the save wait on it.
   if (template.isActive) {
-    await provisionDailyTasksForAllEmployees()
+    provisionInBackground()
   }
 
   const populated = await TaskTemplate.findById(template._id)

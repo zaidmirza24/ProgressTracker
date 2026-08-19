@@ -69,7 +69,15 @@ export const provisionDailyTasksForEmployee = async (employeeId, context = null)
       if (!alreadyCarried) {
         t.dailyDate = startOfToday
         t.isCarryForward = true
-        await t.save()
+        // A concurrent provisioning run may have re-stamped this same task, or created
+        // today's instance, between the check above and this write. The unique index on
+        // (assignedTo, templateRef, dailyDate) rejects the loser; that is the correct
+        // outcome, not an error worth surfacing.
+        try {
+          await t.save()
+        } catch (err) {
+          if (err.code !== 11000) throw err
+        }
       }
     }
   }
@@ -83,22 +91,28 @@ export const provisionDailyTasksForEmployee = async (employeeId, context = null)
       dailyDate: { $gte: startOfToday, $lt: endOfToday }
     })
     if (!exists) {
-      await Task.create({
-        title: tpl.title,
-        description: tpl.description,
-        category: tpl.category,
-        priority: tpl.priority,
-        estimatedHours: tpl.estimatedHours,
-        assignedBy: employeeId, // self-assigned daily
-        assignedTo: employeeId,
-        department: user.department || null,
-        status: "Not Started",
-        progressPercentage: 0,
-        isDaily: true,
-        templateRef: tpl._id,
-        dailyDate: startOfToday,
-        originalDailyDate: startOfToday
-      })
+      try {
+        await Task.create({
+          title: tpl.title,
+          description: tpl.description,
+          category: tpl.category,
+          priority: tpl.priority,
+          estimatedHours: tpl.estimatedHours,
+          assignedBy: employeeId, // self-assigned daily
+          assignedTo: employeeId,
+          department: user.department || null,
+          status: "Not Started",
+          progressPercentage: 0,
+          isDaily: true,
+          templateRef: tpl._id,
+          dailyDate: startOfToday,
+          originalDailyDate: startOfToday
+        })
+      } catch (err) {
+        // Same race as the carry-forward above: a concurrent run got there first, and
+        // the employee already has today's task. Nothing to do.
+        if (err.code !== 11000) throw err
+      }
     }
   }
 }

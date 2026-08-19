@@ -3,46 +3,42 @@ import Task from "../models/Task.js"
 import User from "../models/User.js"
 import asyncHandler from "../utils/asyncHandler.js"
 import AppError from "../utils/appError.js"
-import { startSessionForTask } from "../services/taskService.js"
+import { runInTransaction } from "../utils/transaction.js"
+import { startSessionForTask, calculateSessionElapsedSeconds } from "../services/taskService.js"
 import { isValidTransition } from "../config/workflow.js"
 
-// Helper to check if session is running and calculate current elapsed seconds
-const calculateSessionTime = (session) => {
+// Elapsed seconds plus whether the clock is currently running.
+//
+// The arithmetic itself lives in services/taskService.js and is used by the task-side
+// paths (list rollups, status transitions, the progress report, the work-log prefill).
+// This wrapper adds only the `isRunning` flag the timer endpoints need.
+//
+// It used to be a second, independent copy of the same calculation. A contract test
+// pinned the two together and caught one genuine divergence before it could bite: this
+// copy read `session.events` directly and threw on a document without one, where the
+// service guards with `events || []`. Collapsing them keeps the safe behaviour — which
+// matters because a `.lean()` or projected read in a timer endpoint would produce
+// exactly that document.
+export const calculateSessionTime = (session) => {
   if (!session) return { elapsedSeconds: 0, isRunning: false }
 
-  const events = session.events
-  if (events.length === 0) {
-    // Session is running since startedAt
-    const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000
-    return {
-      elapsedSeconds: Math.max(0, Math.floor(elapsed)),
-      isRunning: true
-    }
-  }
-
+  const events = session.events || []
   const lastEvent = events[events.length - 1]
-  if (lastEvent.type === "pause") {
-    // Session is currently paused
-    return {
-      elapsedSeconds: Math.floor(session.totalSeconds),
-      isRunning: false
-    }
-  } else {
-    // Session is running since last resume event
-    const elapsed = session.totalSeconds + (Date.now() - new Date(lastEvent.timestamp).getTime()) / 1000
-    return {
-      elapsedSeconds: Math.max(0, Math.floor(elapsed)),
-      isRunning: true
-    }
+
+  return {
+    elapsedSeconds: calculateSessionElapsedSeconds(session),
+    // Running unless the most recent event was a pause. No events at all means the
+    // session has been running continuously since it started.
+    isRunning: !lastEvent || lastEvent.type !== "pause"
   }
 }
 
 // Helper to stop an active session
-const performStopSession = async (session) => {
+const performStopSession = async (session, dbSession = undefined) => {
   const { elapsedSeconds } = calculateSessionTime(session)
   session.totalSeconds = elapsedSeconds
   session.stoppedAt = new Date()
-  await session.save()
+  await session.save({ session: dbSession })
 }
 
 // A task only reflects "In Progress" while its timer is actively running. Any time the timer
@@ -73,26 +69,26 @@ const clearBlockedIfSet = (task, changedBy) => {
 // (config/workflow.js) that PUT /:id/status uses, rather than a second,
 // independently-maintained set of rules — this is the sole reason a role is
 // now threaded through every call site below.
-const setTaskStatus = async (taskId, toStatus, changedBy, comment, role) => {
-  const task = await Task.findById(taskId)
+const setTaskStatus = async (taskId, toStatus, changedBy, comment, role, dbSession = undefined) => {
+  const task = await Task.findById(taskId).session(dbSession)
   if (!task) return
 
   const unblocked = toStatus === "In Progress" && clearBlockedIfSet(task, changedBy)
 
   if (task.status === toStatus) {
-    if (unblocked) await task.save()
+    if (unblocked) await task.save({ session: dbSession })
     return
   }
   const fromStatus = task.status
   const isSelfAssigned = task.assignedBy.toString() === task.assignedTo.toString()
   if (!isValidTransition(role, isSelfAssigned, fromStatus, toStatus)) {
-    if (unblocked) await task.save()
+    if (unblocked) await task.save({ session: dbSession })
     return
   }
   task.status = toStatus
   task.progressPercentage = toStatus === "In Progress" ? 50 : task.progressPercentage
   task.history.push({ fromStatus, toStatus, changedBy, comment })
-  await task.save()
+  await task.save({ session: dbSession })
 }
 
 export const getActiveSession = asyncHandler(async (req, res) => {
@@ -130,44 +126,62 @@ export const startSession = asyncHandler(async (req, res, next) => {
     return next(new AppError("You do not have permission to track time on this task", 403))
   }
 
-  // 1. Stop any currently active timer for this employee, and record which task it was
-  //    on so its status can fall back to Pending (switching tasks pauses the previous one).
-  const activeSession = await WorkSession.findOne({
-    employee: req.user.id,
-    stoppedAt: null
-  })
-  const previousTaskId = activeSession?.task
-
-  // 2. Stop-then-create is race-safe: see startSessionForTask's doc comment for how
-  //    concurrent start requests converge instead of creating two active sessions.
-  const session = await startSessionForTask(taskId, req.user.id)
-
-  if (previousTaskId && previousTaskId.toString() !== taskId) {
-    await setTaskStatus(previousTaskId, "Pending", req.user.id, "Switched to another task", req.user.role)
+  // Refuse to start a timer on work that cannot legitimately be in progress.
+  //
+  // Previously the session was created BEFORE the workflow rules were consulted, so a
+  // timer could run against a Completed task: the status transition was correctly
+  // refused, the task stayed Completed, but time kept accruing against a record Locked
+  // Logic §4 calls final — quietly moving its estimated-vs-actual variance and overrun
+  // badge. The same held for work sitting In Review, which is out of the employee's
+  // hands. Checking first makes the refusal explicit instead of silently partial.
+  const isSelfAssigned = targetTask.assignedBy.toString() === targetTask.assignedTo.toString()
+  const alreadyRunning = targetTask.status === "In Progress"
+  if (!alreadyRunning && !isValidTransition(req.user.role, isSelfAssigned, targetTask.status, "In Progress")) {
+    return next(new AppError(
+      `A "${targetTask.status}" task cannot be timed. Reopen it first.`,
+      409,
+      "TASK_NOT_STARTABLE"
+    ))
   }
 
-  // 3. Confirm this call's session actually still holds the employee's single
-  //    active-timer slot before reflecting "In Progress" on the task. A concurrent
-  //    startSession call for a DIFFERENT task can have already stopped this session
-  //    in the stop-then-create race (see startSessionForTask's doc comment) — without
-  //    this check, this task would get stamped "In Progress" with no timer actually
-  //    running behind it, and nothing would ever revert it.
-  const wonTimerRace = await WorkSession.exists({ _id: session._id, stoppedAt: null })
+  // Stop whatever this employee had running and start the new session. The sessions
+  // that were actually stopped come back with it — reading the active session BEFORE
+  // this call was the original bug: under two simultaneous starts the second request
+  // could see "nothing active" because the first had not committed yet.
+  const { session, stopped } = await startSessionForTask(taskId, req.user.id)
 
-  // Update task status to "In Progress" if the transition is valid (per the same
-  // config/workflow.js rules PUT /:id/status uses), and clear any block — starting
-  // the timer is proof the work can proceed.
-  const isSelfAssigned = targetTask.assignedBy.toString() === targetTask.assignedTo.toString()
-  const canStart = targetTask.status !== "In Progress" &&
-    isValidTransition(req.user.role, isSelfAssigned, targetTask.status, "In Progress")
+  // Reflect the timer on this task, if we still hold the employee's single active slot.
+  const holdsTimer = () => WorkSession.exists({ _id: session._id, stoppedAt: null })
+
   const wasUnblocked = clearBlockedIfSet(targetTask, req.user.id)
-  if (wonTimerRace && canStart) {
+  if (await holdsTimer() && !alreadyRunning) {
     targetTask.history.push({ fromStatus: targetTask.status, toStatus: "In Progress", changedBy: req.user.id, comment: "Timer started" })
     targetTask.status = "In Progress"
     targetTask.progressPercentage = 50
     await targetTask.save()
   } else if (wasUnblocked) {
     await targetTask.save()
+  }
+
+  // ── Reconcile, deliberately AFTER our own write has landed ────────────────────
+  //
+  // Ordering matters here and was the second half of the bug. Pausing the previous task
+  // BEFORE its own request had committed found it still "Not Started", where
+  // Not Started → Pending is not a legal transition, so the pause silently did nothing —
+  // and that request then wrote "In Progress" over the top, stranding it with no timer.
+  //
+  // Both steps below are idempotent, so whichever request finishes last converges the
+  // state rather than depending on a particular interleaving.
+  for (const previous of stopped) {
+    if (previous.task.toString() !== taskId) {
+      await setTaskStatus(previous.task, "Pending", req.user.id, "Switched to another task", req.user.role)
+    }
+  }
+
+  // And if a competing start took the slot from under us after we wrote, put our own
+  // task back — otherwise WE become the stranded one.
+  if (!(await holdsTimer())) {
+    await setTaskStatus(taskId, "Pending", req.user.id, "Timer superseded by another task", req.user.role)
   }
 
   const populatedSession = await WorkSession.findById(session._id)
@@ -203,8 +217,14 @@ export const pauseSession = asyncHandler(async (req, res, next) => {
     timestamp: new Date()
   })
 
-  await session.save()
-  await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer paused", req.user.role)
+  // The session write and the task's Pending flip must land together — a crash between
+  // the two would otherwise leave a paused session behind a task that still reads
+  // "In Progress" (Engineering Standards §10: business-critical state changes must be
+  // atomic where required).
+  await runInTransaction(async (dbSession) => {
+    await session.save({ session: dbSession })
+    await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer paused", req.user.role, dbSession)
+  })
 
   res.json({
     session,
@@ -233,8 +253,10 @@ export const resumeSession = asyncHandler(async (req, res, next) => {
     timestamp: new Date()
   })
 
-  await session.save()
-  await setTaskStatus(session.task._id, "In Progress", req.user.id, "Timer resumed", req.user.role)
+  await runInTransaction(async (dbSession) => {
+    await session.save({ session: dbSession })
+    await setTaskStatus(session.task._id, "In Progress", req.user.id, "Timer resumed", req.user.role, dbSession)
+  })
 
   res.json({
     session,
@@ -253,8 +275,10 @@ export const stopSession = asyncHandler(async (req, res, next) => {
     return next(new AppError("No active work session running", 404))
   }
 
-  await performStopSession(session)
-  await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer stopped", req.user.role)
+  await runInTransaction(async (dbSession) => {
+    await performStopSession(session, dbSession)
+    await setTaskStatus(session.task._id, "Pending", req.user.id, "Timer stopped", req.user.role, dbSession)
+  })
 
   res.json({
     success: true,
@@ -295,11 +319,32 @@ export const getActiveTeamSessions = asyncHandler(async (req, res) => {
   res.json({ activeWork })
 })
 
+// ─── THE DAY-ATTRIBUTION RULE ────────────────────────────────────────────────
+// A work session belongs entirely to the LOCAL DAY IT STARTED. It is never split
+// across a midnight boundary, and never re-attributed to the day it ended.
+//
+// Chosen deliberately over the alternatives:
+//   - Splitting a session at midnight is the most literally accurate, and would mean
+//     slicing every pause/resume window per day inside the most safety-critical
+//     calculation in the app, to serve a case a single-office team hits approximately
+//     never. Accuracy nobody can check is not worth fragility everybody inherits.
+//   - Attributing to the END day would move hours that were already reported.
+// "I worked late Tuesday" reading as Tuesday's hours is also what people expect.
+//
+// KNOWN CONSEQUENCE, accepted: a timer started at 23:30 and still running at 00:30
+// contributes NOTHING to today's figure — it is yesterday's session, in full. Someone
+// working through midnight sees "0h today" beside a running clock. Correct by this
+// rule, and surprising; if night work ever becomes normal here, that is the signal to
+// revisit the choice rather than patch around it.
+//
+// Every consumer must apply the SAME rule or the totals stop reconciling:
+// getTodayTrackedHours (below), the daily work-log prefill, and getProgressReport's
+// date-filtered session aggregation all filter on `startedAt`.
 export const getTodayTrackedHours = asyncHandler(async (req, res) => {
   const startOfDay = new Date()
   startOfDay.setHours(0, 0, 0, 0)
 
-  // Find all sessions started today
+  // Sessions STARTED today — see the day-attribution rule above.
   const sessions = await WorkSession.find({
     employee: req.user.id,
     startedAt: { $gte: startOfDay }

@@ -1,0 +1,86 @@
+{
+  "_id": "<id>",
+  "actualUtilizationPct": 71,
+  "assignedCompletionRate": 40,
+  "assignedTotal": 5,
+  "avgProgress": 57,
+  "avgResolutionDays": 0,
+  "blockedBacklogAvgAgeDays": 3,
+  "blockedBacklogOldestAgeDays": 3,
+  "blockedCount": 1,
+  "blockedTasks": [
+    {
+      "_id": "<id>",
+      "ageDays": 3,
+      "reason": "Waiting on the vendor's export",
+      "status": "Pending",
+      "title": "Data migration"
+    }
+  ],
+  "capacityHoursToday": 7,
+  "capacityReasonToday": null,
+  "completed": 3,
+  "completionRate": 43,
+  "dailyCarriedForwardCount": 1,
+  "dailyCompletionRate": 50,
+  "dailyNewCount": 1,
+  "department": "Engineering",
+  "email": "ana@test.local",
+  "estimationAccuracy": 80,
+  "firstPassApprovalRate": 50,
+  "hasOverrunPattern": false,
+  "hasQualitySignal": false,
+  "inProgress": 1,
+  "isCapacityOverrunToday": false,
+  "isWorkingDayToday": true,
+  "name": "Ana Employee",
+  "overallCompletionRate": 43,
+  "overdue": 1,
+  "pausedCount": 0,
+  "pending": 1,
+  "pendingBacklogAvgAgeDays": 3,
+  "pendingBacklogOldestAgeDays": 3,
+  "plannedUtilizationPct": 71,
+  "recentEstimatedTasks": [
+    {
+      "_id": "<id>",
+      "estimatedHours": 1,
+      "isOverrun": false,
+      "overrunPercentage": 0,
+      "title": "Morning standup",
+      "trackedHours": 1
+    },
+    {
+      "_id": "<id>",
+      "estimatedHours": 2,
+      "isOverrun": false,
+      "overrunPercentage": 0,
+      "title": "Vendor summary",
+      "trackedHours": 2
+    },
+    {
+      "_id": "<id>",
+      "estimatedHours": 1,
+      "isOverrun": true,
+      "overrunPercentage": 100,
+      "title": "Client onboarding pack",
+      "trackedHours": 2
+    }
+  ],
+  "recentOverrunProportion": 0.33,
+  "reviewedTaskCount": 2,
+  "reworkRate": 50,
+  "reworkedTasks": [
+    {
+      "_id": "<id>",
+      "lastFeedback": "Missing the pricing appendix",
+      "reworkCount": 1,
+      "status": "Completed",
+      "title": "Client onboarding pack"
+    }
+  ],
+  "role": "employee",
+  "team": "Platform",
+  "total": 7,
+  "totalTrackedSeconds": 32400
+}

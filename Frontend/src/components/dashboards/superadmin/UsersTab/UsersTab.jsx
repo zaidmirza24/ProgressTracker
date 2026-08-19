@@ -54,6 +54,9 @@ const UsersTab = () => {
     dailyWorkingHours: 8, breakHours: 1
   })
 
+  // Load once on mount. `fetchUsers` is a zustand action with a stable identity,
+  // so listing it as a dependency would be noise, not safety.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchUsers() }, [])
 
   const openCreate = () => {

@@ -1,5 +1,22 @@
-export const isSelfCreated = (task) =>
-  task.assignedBy?._id === task.assignedTo?._id || task.assignedBy === task.assignedTo
+// Is this task assigned by its own assignee? The distinction the whole workflow turns
+// on: self-assigned work (including every Daily Task) skips review and can be completed
+// directly, while manager-assigned work must route through In Review.
+//
+// Accepts both populated refs ({ _id }) and raw id strings. The previous form —
+// `task.assignedBy?._id === task.assignedTo?._id || task.assignedBy === task.assignedTo`
+// — read as though it handled both, but on an unpopulated task both sides of the first
+// comparison were `undefined`, so it short-circuited to TRUE and the string fallback
+// never ran. Any manager-assigned task arriving without populated refs would have been
+// treated as self-assigned: the employee would be offered a "Completed" transition the
+// server then rejects, and the stepper would hide the review step.
+//
+// A task with no assignment data at all is deliberately NOT self-created — that path
+// shows the review-gated flow, which is the safe default.
+export const isSelfCreated = (task) => {
+  const assignedBy = task?.assignedBy?._id ?? task?.assignedBy
+  const assignedTo = task?.assignedTo?._id ?? task?.assignedTo
+  return Boolean(assignedBy) && String(assignedBy) === String(assignedTo)
+}
 
 const isSameCalendarDay = (dateA, dateB) =>
   dateA.getFullYear() === dateB.getFullYear() &&
@@ -98,6 +115,12 @@ export const getEmployeeCapacity = (employee, tasks, extraHours = 0, day = new D
       capacityHours = 0
       capacityReason = absence.type === "sick" ? "leave" : absence.type
     }
+  } else if (baseCapacity === 0) {
+    // Nobody set this person's working hours. Both sides already agreed on 0 hours, but
+    // only the server said WHY — so the workload bar showed an unexplained 0h where the
+    // admin report explained it. CAPACITY_REASON_LABELS has had this label all along;
+    // nothing ever produced it. Mirrors calendarService.getCapacityForDay.
+    capacityReason = "no_hours_configured"
   }
 
   return {

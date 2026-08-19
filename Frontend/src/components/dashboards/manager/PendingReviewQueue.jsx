@@ -40,7 +40,12 @@ const PendingReviewQueue = ({ updateTaskStatus, submitting, setDetailTask, taskA
       </h3>
       <div className="grid gap-4 md:grid-cols-2">
         {reviewTasks.map(t => {
-          const lastComment = t.comments && t.comments.length > 0 ? t.comments[t.comments.length - 1].text : "No notes provided."
+          // The list endpoint sends `lastComment` rather than the whole comments array,
+          // which is unbounded. `t.comments` is still read as a fallback because a task
+          // that has just come back from a mutation response carries the full array.
+          const lastComment =
+            t.lastComment?.text ??
+            (t.comments?.length ? t.comments[t.comments.length - 1].text : "No notes provided.")
           return (
             <Card key={t._id} className="border-warning/30 bg-card/45 backdrop-blur-sm shadow-md overflow-hidden relative border-l-4 border-l-warning">
               <CardHeader className="pb-2 flex flex-row items-start justify-between gap-4">
