@@ -1,5 +1,5 @@
 import express from "express"
-import { getTasks, createTask, updateTaskStatus, addComment, ensureDailyTasks, getProgressReport } from "../controllers/taskController.js"
+import { getTasks, getTaskById, createTask, updateTask, cancelTask, setTaskBlocked, updateTaskStatus, addComment, ensureDailyTasks, getProgressReport } from "../controllers/taskController.js"
 import { authenticateJWT, requireRole } from "../middleware/authMiddleware.js"
 
 const router = express.Router()
@@ -8,9 +8,21 @@ const router = express.Router()
 router.use(authenticateJWT)
 
 router.get("/", getTasks)
-router.get("/daily", requireRole(["employee"]), ensureDailyTasks)
-router.get("/report", requireRole(["super_admin", "manager"]), getProgressReport)
+router.get("/daily", requireRole(["employee", "manager", "super_admin"]), ensureDailyTasks)
+router.get("/report", requireRole(["super_admin", "manager", "employee"]), getProgressReport)
+// MUST stay below /daily and /report, or ":id" would swallow them. Serves the full task
+// including history and comments, which the list endpoint deliberately summarises away.
+router.get("/:id", getTaskById)
 router.post("/", requireRole(["manager", "super_admin", "employee"]), createTask)
+// Field edits (incl. reassignment). Role nuance is handled inside the controller —
+// employees may edit a narrower field set on their own self-created tasks — so this
+// is intentionally not gated by requireRole, matching updateTaskStatus below.
+router.patch("/:id", updateTask)
+router.delete("/:id", cancelTask)
+// Blocked is orthogonal to status and has its own authorization (the assignee may
+// declare their own task blocked), so it gets its own endpoint rather than riding on
+// the field-edit PATCH.
+router.patch("/:id/blocked", setTaskBlocked)
 router.put("/:id/status", updateTaskStatus)
 router.post("/:id/comments", addComment)
 

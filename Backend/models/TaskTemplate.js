@@ -7,9 +7,11 @@ const TaskTemplateSchema = new mongoose.Schema(
     category: { type: String, default: "Daily", trim: true },
     priority: { type: String, enum: ["low", "medium", "high"], default: "medium" },
     estimatedHours: { type: Number, default: 1 },
-    // "global" = all employees, "department" = employees in a specific dept only
-    scope: { type: String, enum: ["global", "department"], default: "global" },
+    // "global" = all employees, "department" = employees in a specific dept only,
+    // "employees" = a hand-picked list of individual employees
+    scope: { type: String, enum: ["global", "department", "employees"], default: "global" },
     departments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Department" }],
+    employees: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     isActive: { type: Boolean, default: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }
   },

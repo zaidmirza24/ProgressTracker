@@ -1,6 +1,6 @@
 import express from "express"
-import { getActiveSession, startSession, pauseSession, resumeSession, stopSession, getTodayTrackedHours } from "../controllers/workSessionController.js"
-import { authenticateJWT } from "../middleware/authMiddleware.js"
+import { getActiveSession, startSession, pauseSession, resumeSession, stopSession, getTodayTrackedHours, getActiveTeamSessions } from "../controllers/workSessionController.js"
+import { authenticateJWT, requireRole } from "../middleware/authMiddleware.js"
 
 const router = express.Router()
 
@@ -8,6 +8,7 @@ const router = express.Router()
 router.use(authenticateJWT)
 
 router.get("/active", getActiveSession)
+router.get("/active-team", requireRole(["manager", "super_admin"]), getActiveTeamSessions)
 router.get("/today-hours", getTodayTrackedHours)
 router.post("/start", startSession)
 router.post("/pause", pauseSession)

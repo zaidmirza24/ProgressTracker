@@ -35,3 +35,11 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Test artifacts
+.vitest/
+e2e/.results/
+e2e/.report/
+test-results/
+playwright-report/
+.cache/mongodb-binaries/

@@ -20,6 +20,18 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  /* Status scale. These were defined as raw --success/--warning/--info below but
+     never registered here, so every bg-warning/text-info/border-success utility in
+     the app compiled to nothing — which is why so much of the UI reaches for raw
+     palette colors (text-amber-400 etc.) instead. Registering them makes the
+     semantic classes real. Note the -foreground values are text-ON-that-color, not
+     a text color for a card surface. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -100,12 +112,15 @@
   --sidebar-border:    oklch(0 0 0 / 7%);
   --sidebar-ring:      oklch(0.500 0.175 196 / 45%);
 
-  /* Semantic colors */
-  --success:           oklch(0.560 0.175 158);
+  /* Semantic colors. Lightness is set so these stay legible as TEXT on the
+     near-white surface (>= 4.5:1), since that is how the app mostly uses them —
+     as an icon/label color over a 5-15% tint of themselves. They also serve as
+     solid accent bars, which the darker value only improves. */
+  --success:           oklch(0.480 0.140 158);
   --success-foreground: oklch(0.99 0.005 158);
-  --warning:           oklch(0.640 0.180 72);
-  --warning-foreground: oklch(0.18 0.040 72);
-  --info:              oklch(0.540 0.190 230);
+  --warning:           oklch(0.480 0.125 72);
+  --warning-foreground: oklch(0.99 0.005 72);
+  --info:              oklch(0.480 0.165 230);
   --info-foreground:   oklch(0.99 0.002 230);
 }
 
@@ -208,25 +223,53 @@
 
 /* ── Semantic Badge Variants ──────────────────────────────── */
 @layer utilities {
+  /* Status badges are the product's primary visual language — STATUS_VARIANTS maps
+     all five workflow states onto them, so they must be legible in BOTH themes.
+     The label's lightness has to flip: darker than the fill on the near-white
+     surface, lighter than it on the dark one. Defined light-first to match the
+     :root/.dark token pattern above, so a missing override degrades to a readable
+     badge rather than an invisible one.
+     (`badge-teal` used to live here, defined but never referenced — removed.) */
   .badge-success {
+    background-color: oklch(0.560 0.175 158 / 12%);
+    color: oklch(0.430 0.140 158);
+    border-color: oklch(0.560 0.175 158 / 30%);
+  }
+  .badge-warning {
+    background-color: oklch(0.640 0.180 72 / 14%);
+    color: oklch(0.455 0.115 72);
+    border-color: oklch(0.640 0.180 72 / 32%);
+  }
+  .badge-info {
+    background-color: oklch(0.540 0.190 230 / 12%);
+    color: oklch(0.455 0.155 230);
+    border-color: oklch(0.540 0.190 230 / 30%);
+  }
+  .badge-violet {
+    background-color: oklch(0.560 0.220 292 / 12%);
+    color: oklch(0.455 0.185 292);
+    border-color: oklch(0.560 0.220 292 / 30%);
+  }
+
+  .dark .badge-success {
     background-color: oklch(0.645 0.175 158 / 20%);
     color: oklch(0.745 0.165 158);
     border-color: oklch(0.645 0.175 158 / 30%);
   }
-  .badge-warning {
+  .dark .badge-warning {
     background-color: oklch(0.720 0.180 72 / 18%);
     color: oklch(0.820 0.160 72);
     border-color: oklch(0.720 0.180 72 / 30%);
   }
-  .badge-info {
+  .dark .badge-info {
     background-color: oklch(0.630 0.190 230 / 18%);
     color: oklch(0.730 0.160 230);
     border-color: oklch(0.630 0.190 230 / 30%);
   }
-  .badge-teal {
-    background-color: oklch(0.680 0.175 196 / 18%);
-    color: oklch(0.780 0.150 196);
-    border-color: oklch(0.680 0.175 196 / 30%);
+  .dark .badge-violet {
+    background-color: oklch(0.620 0.220 292 / 18%);
+    color: oklch(0.780 0.150 292);
+    border-color: oklch(0.620 0.220 292 / 30%);
   }
 
   /* Card hover lift */

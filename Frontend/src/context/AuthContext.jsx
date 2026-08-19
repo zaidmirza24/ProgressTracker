@@ -7,8 +7,18 @@ const AuthContext = createContext(null)
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(localStorage.getItem("token") || null)
-  const [loading, setLoading] = useState(true)
+  const [token, setToken] = useState(() => localStorage.getItem("token") || null)
+  // Start "loading" only when there is actually a session to verify. Defaulting to true
+  // forced the no-token case through a synchronous setState inside the effect below —
+  // a cascading render whose only visible effect was a one-frame "Verifying session…"
+  // flash before redirecting a visitor who was plainly never signed in.
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem("token")))
+
+  const logout = () => {
+    localStorage.removeItem("token")
+    setToken(null)
+    setUser(null)
+  }
 
   // Configure axios authorization header on mount or token change
   useEffect(() => {
@@ -26,9 +36,11 @@ export const AuthProvider = ({ children }) => {
           setLoading(false)
         })
     } else {
+      // Syncing an external system (axios' default header) is exactly what an effect is
+      // for. No state is set here: `user` is already null and `loading` already false in
+      // every path that reaches this branch — on first render because the initialiser
+      // above saw no token, and after logout() because it clears both itself.
       delete axios.defaults.headers.common["Authorization"]
-      setUser(null)
-      setLoading(false)
     }
   }, [token])
 
@@ -44,12 +56,6 @@ export const AuthProvider = ({ children }) => {
       const errorMessage = extractErrorMessage(err, "Login failed. Please check credentials.")
       return { success: false, error: errorMessage }
     }
-  }
-
-  const logout = () => {
-    localStorage.removeItem("token")
-    setToken(null)
-    setUser(null)
   }
 
   return (

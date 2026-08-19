@@ -15,12 +15,11 @@ export const TimerProvider = ({ children }) => {
   const timerRef = useRef(null)
 
   const fetchActiveSession = useCallback(async () => {
-    if (!user || user.role !== "employee") {
-      setActiveSession(null)
-      setElapsedSeconds(0)
-      setIsRunning(false)
-      return
-    }
+    // No user means nothing to fetch. The reset this used to perform here was a
+    // synchronous setState reached straight from the effect below — and it was also
+    // unreachable in practice: ProtectedRoute unmounts this provider when the user goes
+    // away, so the state disappears with it rather than needing to be cleared.
+    if (!user) return
     try {
       const res = await axios.get(`${API_BASE}/api/work-sessions/active`)
       const { session, elapsedSeconds: serverSeconds, isRunning: serverRunning } = res.data
@@ -33,9 +32,10 @@ export const TimerProvider = ({ children }) => {
   }, [user])
 
   useEffect(() => {
+    if (!user) return undefined
     fetchActiveSession()
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [fetchActiveSession])
+  }, [user, fetchActiveSession])
 
   // Tick every second when running
   useEffect(() => {

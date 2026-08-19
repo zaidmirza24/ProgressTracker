@@ -4,18 +4,34 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "test": "vitest run",
+    "test:unit": "vitest run --config vitest.unit.config.js",
+    "test:watch": "vitest --config vitest.unit.config.js",
+    "test:integration": "vitest run tests/integration tests/regression",
+    "test:coverage": "vitest run --coverage",
+    "test:perf": "vitest run --config vitest.perf.config.js",
+    "dedupe:daily": "node scripts/dedupeDailyTasks.js",
+    "dedupe:daily:apply": "node scripts/dedupeDailyTasks.js --apply"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.9.1",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2"
+    "node-cron": "^4.6.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.10",
+    "mongodb-memory-server": "^11.2.0",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
   }
 }

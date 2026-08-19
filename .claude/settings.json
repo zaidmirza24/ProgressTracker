@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx eslint *)",
+      "Bash(npx vite *)",
+      "Bash(node -e ' *)",
+      "Bash(node _inspect.mjs)",
+      "Bash(node --check controllers/taskController.js)",
+      "Bash(node _report_test.mjs)",
+      "Bash(rm -f _report_test.mjs)",
+      "Bash(node _pattern_test.mjs)",
+      "Bash(rm -f _pattern_test.mjs)",
+      "Bash(node _summary_test.mjs)",
+      "Bash(rm -f _summary_test.mjs)",
+      "Bash(node -e \"require.resolve\\('playwright'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"logistics@tradex.com\",\"password\":\"password123\"}')",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/daily.json -w 'HTTP %{http_code}\\\\n' http://localhost:3000/api/tasks/daily -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s 'http://localhost:3000/api/tasks?scope=all&assignedTo=__TRACKED_VAR__' -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\(JSON.stringify\\(j.task ? {id:j.task._id, title:j.task.title, assignedTo:j.task.assignedTo, assignedBy:j.task.assignedBy} : j, null, 2\\)\\)}\\)\")",
+      "Bash(curl -s http://localhost:3000/api/tasks/report -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\); console.log\\('isRunning:',j.isRunning,'| session task:',j.session?.task?.title,'| task status:',j.session?.task?.status\\)}\\)\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/work-sessions/stop -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(curl -s -X DELETE http://localhost:3000/api/tasks/__TRACKED_VAR__ -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"reason\":\"cleanup after verification test\"}')",
+      "Bash(lsof -ti:3000 -sTCP:LISTEN)",
+      "Bash(xargs -r kill)",
+      "Bash(lsof -ti:5173 -sTCP:LISTEN)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000,5173 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Start-Sleep -Seconds 1; \"stopped\")",
+      "Bash(timeout 5 bash -c 'curl -sf http://localhost:3000/api/health >/dev/null && echo \"backend still up\" || echo \"backend down\"')",
+      "Bash(timeout 5 bash -c 'curl -sf http://localhost:5173 >/dev/null && echo \"frontend still up\" || echo \"frontend down\"')"
+    ]
+  }
+}

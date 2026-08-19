@@ -4,13 +4,13 @@ import { useAuth } from "../context/AuthContext"
 import { useTimer } from "../context/TimerContext"
 import { useTheme } from "../context/ThemeContext"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import PersonAvatar from "@/components/ui/person-avatar"
 import { motion, AnimatePresence } from "motion/react"
 import {
-  Building2, Users, ClipboardList, Timer, FileText,
-  LayoutDashboard, LogOut, ChevronRight, BarChart3, UserPlus,
-  Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon
+  ClipboardList, FileText, Network,
+  LayoutDashboard, LogOut, ChevronRight, BarChart3,
+  Play, Pause, Square, Menu, X, ArrowUpRight, Sun, Moon, TrendingUp, Briefcase
 } from "lucide-react"
 
 const ROLE_CONFIG = {
@@ -18,35 +18,37 @@ const ROLE_CONFIG = {
     label: "Super Admin",
     variant: "violet",
     links: [
-      { to: "/super-admin", icon: LayoutDashboard, label: "Admin Panel" },
+      { to: "/super-admin", icon: LayoutDashboard, label: "Overview" },
+      { to: "/my-work", icon: Briefcase, label: "My Work" },
+      { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
+      { to: "/team-tasks", icon: ClipboardList, label: "Team Tasks" },
+      { to: "/super-admin/organization", icon: Network, label: "Organization" },
+      { to: "/super-admin/reports", icon: BarChart3, label: "Reports & Analytics" },
+      { to: "/work-logs", icon: FileText, label: "Work Logs" },
     ],
-    placeholders: [
-      { icon: Building2, label: "Departments" },
-      { icon: Users, label: "Teams" },
-      { icon: UserPlus, label: "Manage Users" },
-    ]
+    placeholders: []
   },
   manager: {
     label: "Manager",
     variant: "info",
     links: [
       { to: "/manager", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/my-work", icon: Briefcase, label: "My Work" },
+      { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
+      { to: "/team-tasks", icon: ClipboardList, label: "Team Tasks" },
+      { to: "/work-logs", icon: FileText, label: "Work Logs" },
     ],
-    placeholders: [
-      { icon: ClipboardList, label: "Create Tasks" },
-      { icon: BarChart3, label: "Team Reports" },
-    ]
+    placeholders: []
   },
   employee: {
     label: "Employee",
     variant: "secondary",
     links: [
       { to: "/employee", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/my-progress", icon: TrendingUp, label: "My Progress" },
       { to: "/work-logs", icon: FileText, label: "Work Log" },
     ],
-    placeholders: [
-      { icon: Timer, label: "Active Timer" },
-    ]
+    placeholders: []
   }
 }
 
@@ -98,9 +100,7 @@ const Layout = () => {
 
       {/* User Card */}
       <div className="px-6 py-4 flex items-center gap-3 border-b border-sidebar-border/30 bg-muted/10">
-        <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-primary text-sm">
-          {userInitials}
-        </div>
+        <PersonAvatar name={user.name} seed={user.id || user._id} fallback={userInitials} className="h-10 w-10 text-sm" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold truncate text-foreground">{user.name}</p>
           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -134,6 +134,7 @@ const Layout = () => {
         </div>
 
         {/* Placeholders */}
+        {config.placeholders.length > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between px-3 mb-2">
             <p className="text-[10px] font-bold text-muted-foreground tracking-widest uppercase">FUTURE MODULES</p>
@@ -155,10 +156,11 @@ const Layout = () => {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Live Timer Widget */}
-      {user.role === "employee" && activeSession && (
+      {activeSession && (
         <div className={`p-4 m-4 rounded-xl bg-gradient-to-b from-card to-card/50 border shadow-lg space-y-3 relative overflow-hidden group transition-all duration-300 ${
           isRunning ? "border-primary/45 ring-1 ring-primary/20 shadow-primary/5" : "border-border/80"
         }`}>

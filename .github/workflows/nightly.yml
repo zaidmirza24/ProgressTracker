@@ -1,0 +1,35 @@
+name: Nightly
+
+on:
+  schedule:
+    # 02:30 UTC — well clear of the app's own midnight provisioning cron.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  perf:
+    name: Performance budgets
+    runs-on: ubuntu-latest
+    # Scaffolded but not yet written (P3) — see Backend/tests/perf/README.md.
+    if: false
+    env:
+      TZ: Asia/Kolkata
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/mongodb-binaries
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/mongodb-binaries
+          key: mongodb-binaries-7.0.14-${{ runner.os }}
+      - run: npm ci
+        working-directory: Backend
+      # Data-volume budgets, N+1 query-count bounds and index-usage checks. Never a PR
+      # gate: seeding two years of history takes far too long for a pre-merge check,
+      # and these budgets track slow growth over months, not this commit's correctness.
+      - run: npm run test:perf
+        working-directory: Backend
