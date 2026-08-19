@@ -30,7 +30,7 @@ const Row = ({ label, value }) => (
 )
 
 const TeamSignalsPanel = () => {
-  const employees = useManagerDashboardStore(s => s.employees).filter(emp => emp.role === "employee")
+  const employees = useManagerDashboardStore(s => s.employees)
   const report = useManagerDashboardStore(s => s.report)
   const [expandedId, setExpandedId] = useState(null)
 
@@ -41,7 +41,7 @@ const TeamSignalsPanel = () => {
       <div>
         <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
           <Gauge className="h-5 w-5 text-primary" />
-          Employee Signal Summary
+          Team Signal Summary
         </h3>
         <p className="text-sm text-muted-foreground">Task, time, capacity, completion, deadline, quality, and pattern signals — expand a row for the full picture</p>
       </div>
@@ -64,6 +64,11 @@ const TeamSignalsPanel = () => {
                     {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                     <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-7 w-7 text-[10px]" />
                     <span className="font-bold text-sm text-foreground/90 truncate">{emp.name}</span>
+                    {emp.role && emp.role !== "employee" && (
+                      <Badge variant="outline" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase border-info/40 text-info shrink-0" title="This is a manager/admin's own work, not a direct report">
+                        {emp.role === "super_admin" ? "Admin" : "Manager"}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     {r.isCapacityOverrunToday && (

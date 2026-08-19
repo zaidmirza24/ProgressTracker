@@ -25,7 +25,9 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
   const [departmentFilter, setDepartmentFilter] = useState("all")
   const [teamFilter, setTeamFilter] = useState("all")
 
-  const allEmployees = useMemo(() => employees.filter(emp => emp.role === "employee"), [employees])
+  // Everyone with work is a candidate for a card here — an employee, or a manager/admin
+  // showing their own self-assigned work (Iteration 15's "everyone can be a worker").
+  const allEmployees = employees
 
   // Options are derived from who's actually visible here, not the full org list — this
   // is what makes the same filter correctly self-scope for both roles: a manager (whose
@@ -63,7 +65,7 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
             <User className="h-5 w-5 text-primary" />
             Team Workload & Open Tasks
           </h3>
-          <p className="text-sm text-muted-foreground">Monitor pending tasks and allocate new work employee-wise</p>
+          <p className="text-sm text-muted-foreground">Monitor pending tasks and allocate new work across the team</p>
         </div>
         {showFilters && (
           <div className="flex flex-wrap items-center gap-2 bg-muted/20 px-3 py-2 rounded-xl border border-border/40">
@@ -132,8 +134,17 @@ const TeamWorkloadTracker = ({ openCreateForEmployee, setDetailTask, taskActions
                 <div className="flex items-center gap-2.5">
                   <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-9 w-9 text-xs" />
                   <div className="flex flex-col">
-                    <span className="font-bold text-sm text-foreground/90 leading-tight">{emp.name}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">{emp.team?.name || "Employee"}</span>
+                    <span className="font-bold text-sm text-foreground/90 leading-tight flex items-center gap-1.5">
+                      {emp.name}
+                      {emp.role && emp.role !== "employee" && (
+                        <Badge variant="outline" className="h-3.5 py-0 px-1 gap-0.5 font-bold rounded-sm text-[7px] uppercase border-info/40 text-info" title="This is a manager/admin's own work, not a direct report">
+                          {emp.role === "super_admin" ? "Admin" : "Manager"}
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mt-0.5">
+                      {emp.team?.name || (emp.role === "super_admin" ? "Admin" : emp.role === "manager" ? "Manager" : "Employee")}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-0.5 shrink-0">

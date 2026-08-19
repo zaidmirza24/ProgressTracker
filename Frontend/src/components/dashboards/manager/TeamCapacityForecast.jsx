@@ -27,7 +27,7 @@ const cellClass = (pct, isOverCapacity, isUnavailable) => {
 // from the same single-day capacity math TeamWorkloadTracker uses for "today".
 const TeamCapacityForecast = () => {
   const tasks = useManagerDashboardStore(s => s.tasks)
-  const employees = useManagerDashboardStore(s => s.employees).filter(emp => emp.role === "employee")
+  const employees = useManagerDashboardStore(s => s.employees)
   const calendar = useCalendarStore(s => s.calendar)
 
   if (employees.length === 0) return null
@@ -78,6 +78,11 @@ const TeamCapacityForecast = () => {
                         <div className="flex items-center gap-2">
                           <PersonAvatar name={emp.name} seed={emp._id} fallback="EM" className="h-6 w-6 text-[9px]" />
                           <span className="font-semibold text-foreground/90 whitespace-nowrap">{emp.name}</span>
+                          {emp.role && emp.role !== "employee" && (
+                            <Badge variant="outline" className="h-4 py-0 px-1 gap-0.5 font-bold rounded-sm text-[8px] uppercase border-info/40 text-info shrink-0">
+                              {emp.role === "super_admin" ? "Admin" : "Manager"}
+                            </Badge>
+                          )}
                         </div>
                       </td>
                       {forecast.map(f => {
