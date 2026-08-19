@@ -905,6 +905,11 @@ export const ensureDailyTasks = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Daily tasks provisioned" })
 })
 
+// Below this, tracked time on an estimated task counts as "not meaningfully measured"
+// for Estimation Accuracy — the same treatment as zero, not a tiny denominator that
+// blows the ratio up (see the comment beside estimationAccuracy below).
+const MIN_MEASURABLE_TRACKED_HOURS = 1 / 60 // 1 minute
+
 // ─── GET /api/tasks/report — Admin progress report ───────────────────────────
 export const getProgressReport = asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query
@@ -1090,8 +1095,15 @@ export const getProgressReport = asyncHandler(async (req, res) => {
     // against it) into a nonsensical >4000% figure instead of "not measurable." null
     // matches the convention used elsewhere in this report (e.g. utilization below)
     // for "there's nothing meaningful to show here."
+    //
+    // That earlier fix only caught EXACTLY zero tracked time. A task completed with a
+    // few seconds of tracked time against an hours-long estimate hits the same
+    // nonsensical-percentage problem from the other side (estimated/tracked with a
+    // near-zero denominator) — seen live as "122727%". MIN_MEASURABLE_TRACKED_HOURS
+    // treats anything under a minute as not meaningfully measured, same as zero,
+    // rather than letting a tiny denominator blow the ratio up.
     const estimationAccuracy = totalEstimatedHours > 0
-      ? (totalTrackedHoursForEst > 0 ? Math.round((totalEstimatedHours / totalTrackedHoursForEst) * 100) : null)
+      ? (totalTrackedHoursForEst > MIN_MEASURABLE_TRACKED_HOURS ? Math.round((totalEstimatedHours / totalTrackedHoursForEst) * 100) : null)
       : 100 // default to 100 if no estimates configured
 
     // Daily vs Assigned completion, tracked separately (Locked Logic §7) — Overall

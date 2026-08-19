@@ -104,6 +104,18 @@ describe("progress report", () => {
       expect(rowFor(res, other).estimationAccuracy).toBeNull()
     })
 
+    it("reports accuracy as null, not a six-figure percentage, when almost nothing was tracked", async () => {
+      // Regression: the zero-tracked-time guard above didn't catch a task tracked for
+      // a few seconds against an hours-long estimate — same nonsensical-ratio problem
+      // from the other side, seen live as "122727%" for a real user.
+      const other = fixture.org.employeeA2
+      const tiny = await makeTask({ assignedTo: other, title: "Barely tracked", estimatedHours: 4, status: "Completed" })
+      await makeStoppedSession({ task: tiny, employee: other, seconds: 3 })
+
+      const res = await asUser(fixture.manager).get("/api/tasks/report").expect(200)
+      expect(rowFor(res, other).estimationAccuracy).toBeNull()
+    })
+
     it("defaults accuracy to 100 when no estimates were set at all", async () => {
       // employeeA2 has no tasks in this fixture, so there is nothing to measure against.
       const res = await asUser(fixture.manager).get("/api/tasks/report").expect(200)
